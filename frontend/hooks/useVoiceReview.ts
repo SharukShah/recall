@@ -4,10 +4,12 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { speakText } from "@/lib/audio";
 
 export function useVoiceReview() {
-  const [voiceEnabled, setVoiceEnabled] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("recall-voice-enabled") === "true";
-  });
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  // Hydrate from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    setVoiceEnabled(localStorage.getItem("recall-voice-enabled") === "true");
+  }, []);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const stopFnRef = useRef<(() => void) | null>(null);
@@ -130,10 +132,12 @@ export function useVoiceReview() {
     setIsRecording(false);
   }, []);
 
-  // F12: expose whether SpeechRecognition is available
-  const isSpeechSupported = typeof window !== "undefined" &&
+  // F12: expose whether SpeechRecognition is available (checked after hydration)
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    setIsSpeechSupported(Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition));
+  }, []);
 
   return {
     voiceEnabled,

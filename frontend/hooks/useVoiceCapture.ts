@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 // Augment Window with webkit prefix
 interface SpeechRecognitionEvent extends Event {
@@ -29,13 +29,28 @@ function getSpeechRecognition(): SpeechRecognitionType | null {
 export function useVoiceCapture() {
   const [isListening, setIsListening] = useState(false);
   const [interimText, setInterimText] = useState("");
-  const [isSupported] = useState(() => getSpeechRecognition() !== null);
+  const [isSupported, setIsSupported] = useState(false);
   const recognitionRef = useRef<InstanceType<SpeechRecognitionType> | null>(null);
   const onTranscriptRef = useRef<((text: string) => void) | null>(null);
 
-  const startListening = useCallback((onTranscript: (text: string) => void) => {
+  // Check support after hydration to avoid server/client mismatch
+  useEffect(() => {
+    setIsSupported(getSpeechRecognition() !== null);
+  }, []);
+
+  const startListening = useCallback(async (onTranscript: (text: string) => void) => {
     const SpeechRecognition = getSpeechRecognition();
     if (!SpeechRecognition) return;
+
+    // Explicitly request mic permission first — triggers browser prompt reliably
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Stop the stream immediately — SpeechRecognition manages its own
+      stream.getTracks().forEach(t => t.stop());
+    } catch {
+      console.error("Microphone permission denied");
+      return;
+    }
 
     // Stop any existing session
     if (recognitionRef.current) {
@@ -63,6 +78,11 @@ export function useVoiceCapture() {
     };
 
     recognition.onerror = (event: { error: string }) => {
+      // no-speech: timed out waiting — restart automatically
+      if (event.error === "no-speech") {
+        try { recognition.start(); } catch { /* already started */ }
+        return;
+      }
       if (event.error !== "aborted") {
         console.error("Speech recognition error:", event.error);
       }
@@ -71,6 +91,11 @@ export function useVoiceCapture() {
     };
 
     recognition.onend = () => {
+      // Auto-restart if user hasn't explicitly stopped
+      if (recognitionRef.current === recognition) {
+        try { recognition.start(); } catch { /* ignore */ }
+        return;
+      }
       setIsListening(false);
       setInterimText("");
     };
@@ -81,8 +106,9 @@ export function useVoiceCapture() {
   }, []);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
+    const rec = recognitionRef.current;
+    recognitionRef.current = null; // clear ref first so onend doesn't auto-restart
+    rec?.stop();
     setIsListening(false);
     setInterimText("");
   }, []);
