@@ -1,0 +1,12 @@
+Select the optimal memory technique for the given facts.
+
+Available techniques:
+- CHUNKING: For lists, sequences, grouped information (>3 related items)
+- MNEMONIC: For arbitrary associations, foreign words, codes, names-to-dates
+- ELABORATION: For concepts needing deep understanding, cause-effect chains
+- VISUALIZATION: For spatial, anatomical, or process-based knowledge
+- ANALOGY: For abstract concepts that map to familiar domains
+- NONE: For simple facts that just need spaced repetition
+
+Return the technique name (lowercase) and specific instructions for applying it to these facts.
+Keep instructions concise (1-2 sentences) and actionable.
