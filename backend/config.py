@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str
     
+    # Embedding
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSIONS: int = 1536
+
+    # Search defaults
+    SEARCH_DEFAULT_LIMIT: int = 5
+    SEARCH_MIN_SIMILARITY: float = 0.3
+    SEARCH_MAX_CONTEXT_TOKENS: int = 3000
+
     # App
     ENV: str = "development"
     

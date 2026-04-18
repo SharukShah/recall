@@ -9,4 +9,4 @@ from models.review_models import (
     ReviewQuestion, DueResponse, EvaluateRequest, EvaluateResponse,
     RateRequest, RateResponse, AnswerEvaluation,
 )
-from models.knowledge_models import SearchRequest, KnowledgeItem, QueryResponse
+from models.knowledge_models import SearchRequest, SearchSource, SearchResponse

@@ -98,3 +98,26 @@ export interface RateResponse {
   state: number;
   state_label: string;
 }
+
+// Knowledge Search
+export interface SearchRequest {
+  query: string;
+  limit?: number;
+  min_similarity?: number;
+}
+
+export interface SearchSource {
+  index: number;
+  capture_id: string;
+  content: string;
+  content_type: string;
+  similarity: number;
+  captured_at: string;
+}
+
+export interface SearchResponse {
+  answer: string;
+  sources: SearchSource[];
+  has_answer: boolean;
+  result_count: number;
+}

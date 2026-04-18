@@ -9,6 +9,8 @@ import type {
   EvaluateResponse,
   RateRequest,
   RateResponse,
+  SearchRequest,
+  SearchResponse,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -88,6 +90,13 @@ export async function evaluateAnswer(
 
 export async function rateQuestion(data: RateRequest): Promise<RateResponse> {
   return request<RateResponse>("/api/reviews/rate", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function searchKnowledge(data: SearchRequest): Promise<SearchResponse> {
+  return request<SearchResponse>("/api/knowledge/search", {
     method: "POST",
     body: JSON.stringify(data),
   });

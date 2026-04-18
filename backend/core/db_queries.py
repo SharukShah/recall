@@ -351,3 +351,58 @@ async def get_capture_detail(pool: asyncpg.Pool, capture_id: str) -> dict | None
         "facts": [dict(f) for f in facts],
         "questions": [dict(q) for q in questions],
     }
+
+
+# ============================================================
+# EMBEDDING / VECTOR SEARCH QUERIES
+# ============================================================
+
+async def update_point_embedding(
+    pool_or_conn: PoolOrConn,
+    point_id: str,
+    embedding: list[float],
+) -> None:
+    """Set the embedding vector for an extracted_point."""
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            "UPDATE extracted_points SET embedding = $1 WHERE id = $2",
+            embedding,
+            uuid.UUID(point_id),
+        )
+
+
+async def search_similar_points(
+    pool_or_conn: PoolOrConn,
+    query_embedding: list[float],
+    limit: int = 5,
+    min_similarity: float = 0.3,
+) -> list[dict]:
+    """
+    Cosine similarity search against extracted_points embeddings.
+    Returns rows with similarity score, joined with capture metadata.
+    """
+    async with await _acquire(pool_or_conn) as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                ep.id,
+                ep.content,
+                ep.content_type,
+                ep.capture_id,
+                ep.created_at,
+                1 - (ep.embedding <=> $1::vector) AS similarity,
+                c.raw_text AS capture_raw_text,
+                c.source_type AS capture_source_type,
+                c.created_at AS capture_created_at
+            FROM extracted_points ep
+            JOIN captures c ON c.id = ep.capture_id
+            WHERE ep.embedding IS NOT NULL
+              AND 1 - (ep.embedding <=> $1::vector) >= $3
+            ORDER BY ep.embedding <=> $1::vector
+            LIMIT $2
+            """,
+            query_embedding,
+            limit,
+            min_similarity,
+        )
+        return [dict(row) for row in rows]

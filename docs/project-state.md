@@ -1,8 +1,8 @@
 # Project State: ReCall — Voice-First Personal Memory Assistant
 
 > Last Updated: 2026-04-18
-> Current Phase: MVP Complete — Running locally, all stages done
-> Next Agent: None (MVP shipped locally)
+> Current Phase: Phase 2 In Progress — Knowledge Search complete, Voice + Auth + Deploy remaining
+> Next Agent: Deep Dive Agent (Deepgram Voice Agent integration)
 
 ## Pipeline Status
 
@@ -28,6 +28,10 @@
 * 2026-04-17 — FSRS-6 via py-fsrs for spaced repetition scheduling
 * 2026-04-17 — Deepgram Voice Agent API for Phase 2 voice layer
 * 2026-04-17 — No ORM — raw asyncpg + parameterized SQL queries
+* 2026-04-18 — pgvector 0.8.0 installed on PostgreSQL 16 (built from source with VS Build Tools)
+* 2026-04-18 — text-embedding-3-small (1536-dim) selected for embeddings
+* 2026-04-18 — Pure vector search for Phase 2a, hybrid search deferred to Phase 2b
+* 2026-04-18 — Embedding failure at capture time is non-fatal (NULL embedding, backfilled later)
 * 2026-04-17 — Single-user MVP (no auth in Phase 1)
 * 2026-04-17 — Text-first core (Phase 1), voice layer on top (Phase 2)
 * 2026-04-17 — Schema simplified for MVP: no pgvector, no embeddings, no user_id

@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Plus, Brain, Clock } from "lucide-react";
+import { LayoutDashboard, Plus, Brain, Clock, Search } from "lucide-react";
 import { NavLink } from "./NavLink";
 
 interface DesktopSidebarProps {
@@ -20,6 +20,7 @@ export function DesktopSidebar({ dueCount }: DesktopSidebarProps) {
       <nav className="flex flex-col gap-1 p-3 flex-1">
         <NavLink href="/" icon={LayoutDashboard} label="Dashboard" />
         <NavLink href="/capture" icon={Plus} label="Capture" />
+        <NavLink href="/search" icon={Search} label="Search" />
         <NavLink href="/review" icon={Brain} label="Review" badge={dueCount} />
         <NavLink href="/history" icon={Clock} label="History" />
       </nav>

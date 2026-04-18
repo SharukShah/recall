@@ -109,3 +109,45 @@ async def evaluate_answer(
         max_output_tokens=500,
     )
     return response.output_parsed
+
+
+SEARCH_SYNTHESIS_PROMPT = """You are a personal knowledge assistant. The user is searching their own captured knowledge base.
+
+You will be given CONTEXT — numbered excerpts from the user's previously captured knowledge — and a QUESTION.
+
+Rules:
+1. Answer ONLY based on the provided context. Do not add information from your training data.
+2. Cite your sources using bracket notation [1], [2], etc. matching the context numbers.
+3. If the context does not contain enough information to answer, say so clearly.
+4. Be concise but complete. The user captured this knowledge — help them recall it.
+5. If multiple context items are relevant, synthesize them into a coherent answer.
+6. If the context is irrelevant to the question, respond with exactly: NO_RELEVANT_CONTEXT"""
+
+
+async def synthesize_answer(
+    client: AsyncOpenAI,
+    query: str,
+    context: str,
+) -> dict:
+    """
+    Generate answer from retrieved context using GPT-4.1-mini.
+    Returns { answer: str, has_answer: bool }.
+    """
+    user_message = f"CONTEXT:\n{context}\n\nQUESTION: <user_input>{query}</user_input>"
+    response = await client.responses.create(
+        model=MODEL_MINI,
+        instructions=SEARCH_SYNTHESIS_PROMPT,
+        input=user_message,
+        temperature=0.3,
+        max_output_tokens=1000,
+    )
+    answer_text = response.output_text
+    if answer_text.strip() == "NO_RELEVANT_CONTEXT":
+        return {
+            "answer": "I don't have relevant information about that in your knowledge base.",
+            "has_answer": False,
+        }
+    return {
+        "answer": answer_text,
+        "has_answer": True,
+    }

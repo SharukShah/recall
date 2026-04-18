@@ -10,8 +10,9 @@ from fsrs import Scheduler
 import asyncpg
 
 from core import llm
+from core.embedder import embed_texts
 from core.fsrs_engine import create_new_card, card_to_db_dict
-from core.db_queries import insert_capture, insert_extracted_point, insert_question
+from core.db_queries import insert_capture, insert_extracted_point, insert_question, update_point_embedding
 from models.capture_models import CaptureRequest, CaptureResponse
 
 logger = logging.getLogger(__name__)
@@ -64,16 +65,18 @@ class CaptureService:
                 message="No reviewable facts found. Try being more specific.",
             )
 
-        # Step 2: LLM generate questions + select technique (parallel, before DB)
+        # Step 2: LLM generate questions + select technique + embed facts (parallel, before DB)
         facts_dicts = [f.model_dump() for f in extracted.facts]
         questions_result = None
         technique_result = None
+        embeddings_result = None
 
         try:
             questions_task = llm.generate_questions(self.openai, facts_dicts)
             technique_task = llm.select_technique(self.openai, facts_dicts)
-            questions_result, technique_result = await asyncio.gather(
-                questions_task, technique_task, return_exceptions=True,
+            embed_task = embed_texts(self.openai, [f.content for f in extracted.facts])
+            questions_result, technique_result, embeddings_result = await asyncio.gather(
+                questions_task, technique_task, embed_task, return_exceptions=True,
             )
         except Exception as e:
             logger.error(f"Parallel LLM calls failed: {e}")
@@ -84,6 +87,9 @@ class CaptureService:
         if isinstance(technique_result, Exception):
             logger.error(f"Technique selection failed: {technique_result}")
             technique_result = None
+        if isinstance(embeddings_result, Exception):
+            logger.warning(f"Embedding failed (non-fatal): {embeddings_result}")
+            embeddings_result = None
 
         # Step 3: All DB writes in a single transaction
         async with self.db_pool.acquire() as conn:
@@ -100,6 +106,12 @@ class CaptureService:
                     )
                     point_ids.append(point_id)
                 logger.info(f"Stored {len(point_ids)} facts for capture {capture_id}")
+
+                # Write embeddings if available
+                if embeddings_result and len(embeddings_result) == len(point_ids):
+                    for point_id, embedding in zip(point_ids, embeddings_result):
+                        await update_point_embedding(conn, point_id, embedding)
+                    logger.info(f"Embedded {len(embeddings_result)} points for capture {capture_id}")
 
                 if not questions_result or not questions_result.questions:
                     elapsed_ms = int((time.time() - start_time) * 1000)

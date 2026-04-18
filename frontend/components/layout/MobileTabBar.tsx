@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, PlusCircle, Brain, Clock } from "lucide-react";
+import { LayoutDashboard, PlusCircle, Brain, Clock, Search } from "lucide-react";
 import { NavLink } from "./NavLink";
 
 interface MobileTabBarProps {
@@ -16,6 +16,7 @@ export function MobileTabBar({ dueCount }: MobileTabBarProps) {
     >
       <NavLink href="/" icon={LayoutDashboard} label="Dashboard" orientation="horizontal" />
       <NavLink href="/capture" icon={PlusCircle} label="Capture" orientation="horizontal" />
+      <NavLink href="/search" icon={Search} label="Search" orientation="horizontal" />
       <NavLink href="/review" icon={Brain} label="Review" badge={dueCount} orientation="horizontal" />
       <NavLink href="/history" icon={Clock} label="History" orientation="horizontal" />
     </nav>

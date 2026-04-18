@@ -3,7 +3,13 @@ Database connection pool management using asyncpg.
 Provides async context manager for connection lifecycle.
 """
 import asyncpg
+from pgvector.asyncpg import register_vector
 from config import settings
+
+
+async def _init_connection(conn):
+    """Register pgvector type codec on each new connection."""
+    await register_vector(conn)
 
 
 async def create_db_pool() -> asyncpg.Pool:
@@ -18,6 +24,7 @@ async def create_db_pool() -> asyncpg.Pool:
         min_size=2,
         max_size=10,
         command_timeout=60,
+        init=_init_connection,
     )
     return pool
 
