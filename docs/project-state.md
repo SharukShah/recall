@@ -1,8 +1,8 @@
 # Project State: ReCall — Voice-First Personal Memory Assistant
 
 > Last Updated: 2026-04-18
-> Current Phase: Phase 2 In Progress — Knowledge Search complete, Voice + Auth + Deploy remaining
-> Next Agent: Deep Dive Agent (Deepgram Voice Agent integration)
+> Current Phase: Phase 2 Complete (local-only) — Knowledge Search + Voice done. Auth + Deploy deferred (not needed for local use).
+> Next Agent: None — Phase 2 complete for local MVP
 
 ## Pipeline Status
 
@@ -34,6 +34,11 @@
 * 2026-04-18 — Embedding failure at capture time is non-fatal (NULL embedding, backfilled later)
 * 2026-04-17 — Single-user MVP (no auth in Phase 1)
 * 2026-04-17 — Text-first core (Phase 1), voice layer on top (Phase 2)
+* 2026-04-18 — Voice Capture: Web Speech API (browser-native) — zero backend changes, free, Chrome/Edge
+* 2026-04-18 — Voice Review: OpenAI TTS-1 (nova voice) for questions/feedback + Web Speech API for answers
+* 2026-04-18 — TTS endpoint: POST /api/voice/tts with rate limiting (30/min)
+* 2026-04-18 — Deepgram deferred to future upgrade — Web Speech API sufficient for single-user MVP
+* 2026-04-18 — Voice preference persisted in localStorage
 * 2026-04-17 — Schema simplified for MVP: no pgvector, no embeddings, no user_id
 * 2026-04-18 — PostgreSQL 16 installed locally, recall_mvp database created with 4 tables
 * 2026-04-18 — Custom rate limiter chosen over slowapi (integration issues with FastAPI Depends pattern)
@@ -93,6 +98,12 @@
 | 21 | 2026-04-18 | Iteration Agent | Fix 4 frontend polish gaps | Completed — All 4 gaps fixed: focus management (5 transitions), CSS animations (crossfade/slide), End Session confirmation dialog, Escape/Backspace in history detail. Build clean. |
 | 22 | 2026-04-18 | Testing - Critic | Frontend security audit | Completed — 4 Medium (path traversal, no security headers, double-click race, CSR layout), 8 Low, 3 Info. Score 7/10. |
 | 23 | 2026-04-18 | Iteration Agent | Fix 4 frontend security issues | Completed — F1: encodeURIComponent on capture ID. F2: security headers in next.config.js. F3: isSubmitting ref guard on rating/evaluate. F4: server component layout + AppShell client wrapper. Build clean. |
+
+| 24 | 2026-04-18 | Deep Dive Agent | Deepgram voice integration research | Completed — Analyzed 3 options for capture STT (Web Speech, Deepgram proxy, Deepgram direct) and 3 for review (browser-native, OpenAI TTS + Deepgram STT, Voice Agent API). Recommended phased approach. |
+| 25 | 2026-04-18 | Coding Agent | Voice Capture & Review implementation | Completed — Backend: TTS endpoint (voice.py). Frontend: useVoiceCapture hook, VoiceCaptureButton, useVoiceReview hook, VoiceControls, audio.ts. Integrated into CaptureForm + ReviewSession. |
+| 26 | 2026-04-18 | Traceability Auditor | Audit voice feature (pre-iteration) | Completed — 72% completeness. Voice capture + review work. Gaps: no Deepgram WebSocket (deferred to Phase 3), no spoken ratings, no auto-listen. |
+| 27 | 2026-04-18 | Testing - Critic | Security & stress test voice | Completed — 3 Critical (promise leak, concurrent speak, concurrent listen), 7 Security (rate limit, error logging, cost), 5 Logic, 7 Edge cases. |
+| 28 | 2026-04-18 | Iteration Agent | Fix P0+P1 voice issues | Completed — Fixed: C1 (playAudio promise resolve on stop), C2 (AbortController for speak cancellation), C3 (listenForAnswer guard + toggle), F3 (rate limit 30→10/min), F5 (error log sanitized), F7 (rate limiter periodic cleanup), F11 (no mic during TTS), F12 (hide Speak if no Speech API), F13 (try-catch recognition.start), F14 (fetch timeout 15s), F16 (truncate TTS text to 5000). |
 
 ## Skipped Stages
 

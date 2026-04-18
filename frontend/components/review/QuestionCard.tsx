@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, type RefObject } from "react";
-import { Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
+import { Lightbulb, ChevronDown, ChevronUp, Mic, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
 import type { ReviewQuestion } from "@/types/api";
 
 interface QuestionCardProps {
@@ -16,6 +15,8 @@ interface QuestionCardProps {
   onCheckAnswer: () => void;
   isEvaluating: boolean;
   answerRef?: RefObject<HTMLTextAreaElement>;
+  onVoiceAnswer?: () => void;
+  isRecording?: boolean;
 }
 
 export function QuestionCard({
@@ -25,6 +26,8 @@ export function QuestionCard({
   onCheckAnswer,
   isEvaluating,
   answerRef,
+  onVoiceAnswer,
+  isRecording,
 }: QuestionCardProps) {
   const [showHint, setShowHint] = useState(false);
 
@@ -75,21 +78,36 @@ export function QuestionCard({
           rows={3}
           disabled={isEvaluating}
         />
-        <Button
-          onClick={onCheckAnswer}
-          disabled={!answer.trim() || isEvaluating}
-          className="w-full"
-          size="lg"
-        >
-          {isEvaluating ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Evaluating...
-            </>
-          ) : (
-            "Check Answer"
+        <div className="flex gap-2">
+          {onVoiceAnswer && (
+            <Button
+              type="button"
+              variant={isRecording ? "destructive" : "outline"}
+              onClick={onVoiceAnswer}
+              disabled={isEvaluating}
+              className="gap-1.5"
+              aria-label={isRecording ? "Recording..." : "Speak your answer"}
+            >
+              <Mic className={`h-4 w-4 ${isRecording ? "animate-pulse" : ""}`} />
+              {isRecording ? "Listening..." : "Speak"}
+            </Button>
           )}
-        </Button>
+          <Button
+            onClick={onCheckAnswer}
+            disabled={!answer.trim() || isEvaluating}
+            className="flex-1"
+            size="lg"
+          >
+            {isEvaluating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Evaluating...
+              </>
+            ) : (
+              "Check Answer"
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

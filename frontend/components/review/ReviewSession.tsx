@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { useReviewSession } from "@/hooks/useReviewSession";
+import { useVoiceReview } from "@/hooks/useVoiceReview";
 import { SessionHeader } from "./SessionHeader";
 import { ReviewProgressBar } from "./ProgressBar";
 import { QuestionCard } from "./QuestionCard";
@@ -9,6 +10,7 @@ import { FeedbackCard } from "./FeedbackCard";
 import { RatingButtons } from "./RatingButtons";
 import { SessionSummary } from "./SessionSummary";
 import { EmptyReviewState } from "./EmptyReviewState";
+import { VoiceControls } from "./VoiceControls";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { ErrorState } from "@/components/shared/ErrorState";
 
@@ -23,15 +25,67 @@ export function ReviewSession() {
     retryLoad,
   } = useReviewSession();
 
+  const voice = useVoiceReview();
+
   const answerRef = useRef<HTMLTextAreaElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const summaryRef = useRef<HTMLHeadingElement>(null);
   const [showConfirm, setShowConfirm] = useState(false);
+  const prevPhaseRef = useRef(state.phase);
+  const prevIndexRef = useRef(state.currentIndex);
+
+  // Voice: speak question when entering question phase
+  useEffect(() => {
+    const phaseChanged = prevPhaseRef.current !== state.phase;
+    const indexChanged = prevIndexRef.current !== state.currentIndex;
+    prevPhaseRef.current = state.phase;
+    prevIndexRef.current = state.currentIndex;
+
+    if (state.phase === "question" && (phaseChanged || indexChanged) && currentQuestion) {
+      if (voice.voiceEnabled) {
+        voice.speak(currentQuestion.question_text);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.currentIndex, currentQuestion?.question_id]);
+
+  // Voice: speak feedback when entering feedback phase
+  useEffect(() => {
+    if (state.phase === "feedback" && state.evaluation && voice.voiceEnabled) {
+      const feedbackText = state.evaluation.score === "correct"
+        ? state.evaluation.feedback
+        : `${state.evaluation.feedback}. The correct answer is: ${state.evaluation.correct_answer}`;
+      voice.speak(feedbackText);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.evaluation?.feedback]);
+
+  // Voice: auto-listen for answer after question TTS finishes
+  // F11: Don't start mic while TTS is playing
+  // F10: If already recording, stop instead of starting new
+  const handleVoiceAnswer = useCallback(async () => {
+    if (!voice.voiceEnabled || state.phase !== "question") return;
+
+    // If already recording, toggle off
+    if (voice.isRecording) {
+      voice.stopRecording();
+      return;
+    }
+
+    // Wait for TTS to finish before opening mic
+    if (voice.isSpeaking) {
+      voice.stopSpeaking();
+    }
+
+    const answer = await voice.listenForAnswer();
+    if (answer) {
+      setAnswer(answer);
+    }
+  }, [voice, state.phase, setAnswer]);
 
   // Focus management: move focus on phase transitions
   useEffect(() => {
     if (state.phase === "question") {
-      // Small delay for DOM to update
       setTimeout(() => answerRef.current?.focus(), 100);
     } else if (state.phase === "feedback") {
       setTimeout(() => feedbackRef.current?.focus(), 100);
@@ -70,11 +124,20 @@ export function ReviewSession() {
 
   return (
     <div className="space-y-6">
-      <SessionHeader
-        currentIndex={state.currentIndex}
-        total={state.questions.length}
-        onEndSession={handleEndSession}
-      />
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <SessionHeader
+          currentIndex={state.currentIndex}
+          total={state.questions.length}
+          onEndSession={handleEndSession}
+        />
+        <VoiceControls
+          voiceEnabled={voice.voiceEnabled}
+          isSpeaking={voice.isSpeaking}
+          isRecording={voice.isRecording}
+          onToggleVoice={voice.toggle}
+          onStopSpeaking={voice.stopSpeaking}
+        />
+      </div>
 
       <ReviewProgressBar
         current={state.sessionStats.answered}
@@ -90,6 +153,8 @@ export function ReviewSession() {
             onCheckAnswer={checkAnswer}
             isEvaluating={state.phase === "evaluating"}
             answerRef={answerRef}
+            onVoiceAnswer={voice.voiceEnabled && voice.isSpeechSupported ? handleVoiceAnswer : undefined}
+            isRecording={voice.isRecording}
           />
         </div>
       )}

@@ -9,12 +9,14 @@ import { createCapture } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import type { CaptureResponse } from "@/types/api";
 import { CaptureResult } from "./CaptureResult";
+import { VoiceCaptureButton } from "./VoiceCaptureButton";
 
 export function CaptureForm() {
   const [rawText, setRawText] = useState("");
   const [whyItMatters, setWhyItMatters] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CaptureResponse | null>(null);
+  const [sourceType, setSourceType] = useState<"text" | "voice">("text");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,12 +26,13 @@ export function CaptureForm() {
     try {
       const response = await createCapture({
         raw_text: rawText.slice(0, 50_000),
-        source_type: "text",
+        source_type: sourceType,
         why_it_matters: whyItMatters || undefined,
       });
       setResult(response);
       setRawText("");
       setWhyItMatters("");
+      setSourceType("text");
       if (response.status === "complete") {
         toast({ title: "Knowledge captured!", variant: "success" });
       }
@@ -76,9 +79,18 @@ export function CaptureForm() {
           aria-label="What did you learn? Enter the text you want to capture."
           className="resize-y min-h-[150px]"
         />
-        <p className="text-xs text-muted-foreground text-right">
-          {rawText.length.toLocaleString()} / 50,000 characters
-        </p>
+        <div className="flex items-center justify-between">
+          <VoiceCaptureButton
+            onTranscript={(text) => {
+              setRawText((prev) => (prev ? prev + " " + text : text));
+              setSourceType("voice");
+            }}
+            disabled={submitting}
+          />
+          <p className="text-xs text-muted-foreground">
+            {rawText.length.toLocaleString()} / 50,000 characters
+          </p>
+        </div>
         {rawText.length > 0 && rawText.length < 10 && (
           <p className="text-xs text-yellow-600">
             That&apos;s very short. Add more detail for better extraction.

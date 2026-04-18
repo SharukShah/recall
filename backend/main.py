@@ -12,7 +12,7 @@ import logging
 
 from config import settings
 from db import create_db_pool, close_db_pool
-from routers import captures, reviews, stats, knowledge
+from routers import captures, reviews, stats, knowledge, voice
 
 # Configure logging
 logging.basicConfig(
@@ -99,6 +99,7 @@ app.include_router(captures.router, prefix="/api/captures", tags=["captures"])
 app.include_router(reviews.router, prefix="/api/reviews", tags=["reviews"])
 app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
+app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 
 
 # TODO: Mount routers in later steps
