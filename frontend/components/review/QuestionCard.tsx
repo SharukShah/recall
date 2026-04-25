@@ -35,9 +35,16 @@ export function QuestionCard({
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <Badge variant="secondary" className="uppercase text-xs">
-            {question.question_type}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="uppercase text-xs">
+              {question.question_type === "explain_back" ? "explain" : question.question_type}
+            </Badge>
+            {question.question_type === "connection" && (
+              <Badge variant="outline" className="text-xs text-primary border-primary">
+                Connection
+              </Badge>
+            )}
+          </div>
           <p className="text-base font-medium leading-relaxed">
             {question.question_text}
           </p>
@@ -45,10 +52,10 @@ export function QuestionCard({
             <div>
               <button
                 onClick={() => setShowHint(!showHint)}
-                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-2 text-sm text-primary/70 hover:text-primary transition-colors"
               >
                 <Lightbulb className="h-4 w-4" />
-                <span>Hint</span>
+                <span>{showHint ? "Hide hint" : "Show hint"}</span>
                 {showHint ? (
                   <ChevronUp className="h-3 w-3" />
                 ) : (
@@ -56,7 +63,7 @@ export function QuestionCard({
                 )}
               </button>
               {showHint && (
-                <p className="mt-2 text-sm text-muted-foreground pl-6">
+                <p className="mt-2 text-sm text-muted-foreground pl-6 border-l-2 border-primary/20">
                   {question.mnemonic_hint}
                 </p>
               )}
@@ -66,16 +73,21 @@ export function QuestionCard({
       </Card>
 
       <div className="space-y-3">
-        <label htmlFor="answer" className="text-sm font-medium">
-          Your answer
-        </label>
+        <div className="flex items-center justify-between">
+          <label htmlFor="answer" className="text-sm font-medium">
+            {question.question_type === "explain_back" ? "Explain in your own words" : "Your answer"}
+          </label>
+          <span className="text-[11px] text-muted-foreground">
+            {answer.length > 0 ? `${answer.length} chars` : question.question_type === "explain_back" ? "2–3 sentences ideal" : "1–2 sentences"}
+          </span>
+        </div>
         <Textarea
           id="answer"
           ref={answerRef}
           value={answer}
           onChange={(e) => onAnswerChange(e.target.value)}
-          placeholder="Type your answer..."
-          rows={3}
+          placeholder={question.question_type === "explain_back" ? "Explain the concept as if teaching someone else..." : "Type your answer..."}
+          rows={question.question_type === "explain_back" ? 5 : 3}
           disabled={isEvaluating}
         />
         <div className="flex gap-2">

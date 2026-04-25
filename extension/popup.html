@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReCall Extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>ReCall</h1>
+      <p class="subtitle">Spaced Repetition Memory</p>
+    </div>
+
+    <div id="not-configured" class="section" style="display: none;">
+      <p class="info-text">Configure your API connection to start capturing.</p>
+      <button id="open-settings" class="btn btn-primary">Open Settings</button>
+    </div>
+
+    <div id="configured" class="section" style="display: none;">
+      <div class="status-row">
+        <span class="status-label">Connection:</span>
+        <span id="connection-status" class="status-value">Checking...</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-value" id="captures-today">0</div>
+          <div class="stat-label">Captures Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="items-due">-</div>
+          <div class="stat-label">Items Due</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="open-dashboard" class="btn btn-secondary">Open Dashboard</button>
+        <button id="settings-btn" class="btn btn-outline">Settings</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p class="help-text">
+        <strong>How to use:</strong> Highlight text on any page, right-click, and select "Capture to ReCall"
+      </p>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

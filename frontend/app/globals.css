@@ -1,55 +1,79 @@
+@import "tw-animate-css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 228 25% 97%;
+    --foreground: 240 10% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 240 10% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 262 83% 58%;
+    --popover-foreground: 240 10% 10%;
+    --primary: 239 70% 50%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --secondary: 228 15% 95%;
+    --secondary-foreground: 240 10% 15%;
+    --muted: 228 12% 95%;
+    --muted-foreground: 240 5% 45%;
+    --accent: 239 30% 94%;
+    --accent-foreground: 239 40% 30%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 262 83% 58%;
-    --radius: 0.5rem;
+    --border: 228 10% 90%;
+    --input: 228 12% 90%;
+    --ring: 239 70% 50%;
+    --radius: 0.625rem;
+    --chart-1: 239 70% 50%;
+    --chart-2: 160 55% 45%;
+    --chart-3: 45 80% 55%;
+    --chart-4: 330 65% 50%;
+    --chart-5: 20 80% 50%;
+    --sidebar: 0 0% 98%;
+    --sidebar-foreground: 0 0% 10%;
+    --sidebar-primary: 0 0% 15%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 0 0% 60%;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
+    --background: 240 15% 12%;
     --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
+    --card: 240 12% 16%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
+    --popover: 240 12% 16%;
     --popover-foreground: 0 0% 98%;
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 240 3.7% 15.9%;
+    --primary: 239 75% 60%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 10% 20%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
+    --muted: 240 10% 20%;
+    --muted-foreground: 240 5% 60%;
+    --accent: 240 15% 22%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 63% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 262 83% 58%;
+    --border: 240 10% 22%;
+    --input: 240 10% 24%;
+    --ring: 239 75% 60%;
+    --chart-1: 239 75% 60%;
+    --chart-2: 160 55% 45%;
+    --chart-3: 45 80% 55%;
+    --chart-4: 330 65% 50%;
+    --chart-5: 20 80% 50%;
+    --sidebar: 0 0% 15%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 239 70% 50%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 20%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 0 0% 45%;
   }
-}
-
-@layer base {
   * {
     @apply border-border;
   }
@@ -69,6 +93,12 @@
   .animate-fade-in-up {
     animation: fadeInUp 200ms ease-out;
   }
+  .animate-slide-up {
+    animation: slideUp 200ms ease-out;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 @keyframes crossfadeIn {
@@ -83,5 +113,10 @@
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(100%); }
   to { opacity: 1; transform: translateY(0); }
 }

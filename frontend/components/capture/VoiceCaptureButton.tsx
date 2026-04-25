@@ -14,7 +14,11 @@ export function VoiceCaptureButton({ onTranscript, disabled }: VoiceCaptureButto
   const { isListening, interimText, isSupported, startListening, stopListening } =
     useVoiceCapture();
 
-  if (!isSupported) return null;
+  if (!isSupported) {
+    return (
+      <p className="text-xs text-muted-foreground">🎤 Voice capture requires Chrome or Edge</p>
+    );
+  }
 
   const toggle = () => {
     if (isListening) {

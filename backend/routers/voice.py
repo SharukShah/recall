@@ -1,12 +1,14 @@
 """
-Voice router — TTS audio generation for voice review.
-POST /tts → generate speech audio from text using OpenAI TTS-1.
+Voice router — TTS audio generation for voice review + voice agent status.
+POST /tts    → generate speech audio from text using OpenAI TTS-1.
+GET  /status → check if Deepgram voice agent is available.
 """
 import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from config import settings
 from core.rate_limiter import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -41,3 +43,19 @@ async def text_to_speech(body: TTSRequest, request: Request):
     except Exception as e:
         logger.error(f"TTS generation failed: {type(e).__name__}")
         raise HTTPException(status_code=503, detail="TTS generation failed")
+
+
+@router.get("/status")
+async def voice_status():
+    """Check if Deepgram voice agent is available."""
+    if settings.DEEPGRAM_ENABLED and settings.DEEPGRAM_API_KEY:
+        return {
+            "available": True,
+            "provider": "deepgram",
+            "modes": ["capture", "review", "teach"],
+        }
+    return {
+        "available": False,
+        "provider": None,
+        "modes": [],
+    }

@@ -58,3 +58,61 @@ CREATE TABLE review_logs (
 CREATE INDEX idx_questions_due ON questions (state, due);
 CREATE INDEX idx_review_logs_question ON review_logs (question_id, reviewed_at DESC);
 CREATE INDEX idx_captures_created ON captures (created_at DESC);
+
+-- ============================================================
+-- Phase 3 Migration: Smart Features
+-- ============================================================
+
+-- 1. Teach Me Mode: teaching sessions
+CREATE TABLE IF NOT EXISTS teach_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    topic TEXT NOT NULL,
+    plan_json JSONB NOT NULL,
+    current_chunk INT NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'in_progress',
+    capture_id UUID REFERENCES captures(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Connection Questions: track which points have been connected
+CREATE TABLE IF NOT EXISTS connection_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question_id UUID NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+    point_a_id UUID NOT NULL REFERENCES extracted_points(id) ON DELETE CASCADE,
+    point_b_id UUID NOT NULL REFERENCES extracted_points(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(point_a_id, point_b_id)
+);
+
+-- 3. Evening Reflection: daily reflections
+CREATE TABLE IF NOT EXISTS reflections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    content TEXT NOT NULL,
+    capture_id UUID REFERENCES captures(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Mnemonic Generation: per-fact mnemonic storage
+ALTER TABLE extracted_points ADD COLUMN IF NOT EXISTS mnemonic_hint TEXT;
+
+-- 5. URL Ingestion: source URL on captures
+ALTER TABLE captures ADD COLUMN IF NOT EXISTS source_url TEXT;
+
+-- ============================================================
+-- Phase 4 Migration: Voice Agent Sessions
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS voice_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mode TEXT NOT NULL,
+    duration_seconds INT,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    ended_at TIMESTAMPTZ
+);
+
+-- Phase 3 Indexes
+CREATE INDEX IF NOT EXISTS idx_teach_sessions_status ON teach_sessions (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reflections_created ON reflections (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reflections_one_per_day ON reflections (date(created_at AT TIME ZONE 'UTC'));
+CREATE INDEX IF NOT EXISTS idx_connection_questions_points ON connection_questions (point_a_id, point_b_id);

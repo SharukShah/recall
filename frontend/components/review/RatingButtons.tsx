@@ -37,9 +37,9 @@ export function RatingButtons({ suggestedRating, onRate, disabled }: RatingButto
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium">How difficult was this?</p>
+      <p className="text-sm font-medium">How well did you know this?</p>
       <div
-        className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+        className="grid grid-cols-4 gap-2"
         role="group"
         aria-label="Rate your recall difficulty"
       >

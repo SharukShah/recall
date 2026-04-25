@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
 interface SessionHeaderProps {
   currentIndex: number;
@@ -9,15 +10,16 @@ interface SessionHeaderProps {
 export function SessionHeader({ currentIndex, total, onEndSession }: SessionHeaderProps) {
   return (
     <div className="flex items-center justify-between">
-      <h1 className="text-2xl font-semibold">Review</h1>
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-muted-foreground">
-          {currentIndex + 1} / {total}
-        </span>
-        <Button variant="outline" size="sm" onClick={onEndSession}>
-          End Session
-        </Button>
+      <div>
+        <h1 className="text-xl font-bold">Review Session</h1>
+        <p className="text-xs text-muted-foreground">
+          Question {currentIndex + 1} of {total}
+        </p>
       </div>
+      <Button variant="ghost" size="sm" onClick={onEndSession} className="gap-1.5 text-muted-foreground hover:text-destructive">
+        <X className="h-4 w-4" />
+        End
+      </Button>
     </div>
   );
 }

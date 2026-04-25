@@ -182,6 +182,26 @@ export function ReviewSession() {
         </div>
       )}
 
+      {state.phase === "scheduled" && state.lastSchedule && (
+        <div className="flex flex-col items-center gap-3 py-8 animate-crossfade-in">
+          <div className="rounded-full bg-primary/10 p-3">
+            <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {state.lastSchedule.interval_days < 1
+              ? `Next review in ${Math.max(1, Math.round(state.lastSchedule.interval_days * 24 * 60))} min`
+              : state.lastSchedule.interval_days < 2
+                ? "Next review tomorrow"
+                : `Next review in ${Math.round(state.lastSchedule.interval_days)} days`}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {state.lastSchedule.state_label}
+          </p>
+        </div>
+      )}
+
       {/* End Session confirmation dialog */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-crossfade-in">

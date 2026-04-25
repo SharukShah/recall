@@ -1,6 +1,6 @@
 "use client";
 
-import { Volume2, VolumeX, Mic, MicOff } from "lucide-react";
+import { Volume2, VolumeX, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,10 @@ export function VoiceControls({
         variant={voiceEnabled ? "default" : "outline"}
         size="sm"
         onClick={onToggleVoice}
-        className="gap-1.5"
+        className={cn(
+          "gap-1.5 text-xs",
+          voiceEnabled && "bg-primary shadow-sm"
+        )}
         aria-label={voiceEnabled ? "Disable voice mode" : "Enable voice mode"}
       >
         {voiceEnabled ? (
@@ -37,7 +40,7 @@ export function VoiceControls({
         ) : (
           <>
             <VolumeX className="h-3.5 w-3.5" />
-            Voice Off
+            Voice
           </>
         )}
       </Button>
@@ -48,7 +51,7 @@ export function VoiceControls({
           variant="ghost"
           size="sm"
           onClick={onStopSpeaking}
-          className="gap-1.5 text-muted-foreground"
+          className="gap-1.5 text-xs text-muted-foreground"
           aria-label="Stop speaking"
         >
           <VolumeX className="h-3.5 w-3.5" />
@@ -57,9 +60,12 @@ export function VoiceControls({
       )}
 
       {isRecording && (
-        <div className="flex items-center gap-1.5 text-sm text-red-500">
-          <Mic className={cn("h-3.5 w-3.5 animate-pulse")} />
-          <span className="animate-pulse">Listening...</span>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+          </span>
+          <span className="text-red-500 font-medium">Listening...</span>
         </div>
       )}
     </div>

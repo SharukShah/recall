@@ -7,6 +7,9 @@ export interface DashboardStats {
   total_questions: number;
   retention_rate: number;
   reviews_today: number;
+  reflection_completed_today: boolean;
+  reflection_streak: number;
+  active_teach_session: string | null;
 }
 
 export interface CaptureListItem {
@@ -80,7 +83,7 @@ export interface EvaluateRequest {
 
 export interface EvaluateResponse {
   correct_answer: string;
-  score: "correct" | "partial" | "incorrect";
+  score: "correct" | "partial" | "wrong";
   feedback: string;
   suggested_rating: number;
 }
@@ -117,7 +120,86 @@ export interface SearchSource {
 
 export interface SearchResponse {
   answer: string;
-  sources: SearchSource[];
   has_answer: boolean;
   result_count: number;
+  sources: SearchSource[];
+}
+
+// Phase 3: Teach Me Mode
+export interface TeachStartRequest {
+  topic: string;
+}
+
+export interface TeachStartResponse {
+  session_id: string;
+  topic: string;
+  total_chunks: number;
+  current_chunk: number;
+  chunk_title: string;
+  chunk_content: string;
+  chunk_analogy: string | null;
+  recall_question: string;
+}
+
+export interface TeachRespondRequest {
+  session_id: string;
+  answer: string;
+}
+
+export interface TeachRespondResponse {
+  feedback: string;
+  score: "correct" | "partial" | "wrong";
+  is_complete: boolean;
+  current_chunk?: number;
+  chunk_title?: string;
+  chunk_content?: string;
+  chunk_analogy?: string | null;
+  recall_question?: string;
+  summary?: string;
+  capture_id?: string;
+}
+
+export interface TeachSessionResponse {
+  session_id: string;
+  topic: string;
+  total_chunks: number;
+  current_chunk: number;
+  chunk_title: string;
+  chunk_content: string;
+  chunk_analogy: string | null;
+  recall_question: string;
+  is_complete: boolean;
+}
+
+// Phase 3: Evening Reflection
+export interface ReflectionRequest {
+  content: string;
+}
+
+export interface ReflectionResponse {
+  reflection_id: string;
+  capture_id: string | null;
+  facts_count: number;
+  questions_count: number;
+  streak_days: number;
+  message: string | null;
+}
+
+export interface ReflectionStatusResponse {
+  completed_today: boolean;
+  streak_days: number;
+  last_reflection_at: string | null;
+}
+
+export interface ReflectionListItem {
+  id: string;
+  content: string;
+  capture_id: string | null;
+  created_at: string;
+}
+
+// Phase 3: URL Ingestion
+export interface URLCaptureRequest {
+  url: string;
+  why_it_matters?: string;
 }

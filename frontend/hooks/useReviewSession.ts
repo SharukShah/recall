@@ -2,9 +2,9 @@
 
 import { useReducer, useCallback, useEffect, useRef } from "react";
 import { getDueQuestions, evaluateAnswer, rateQuestion } from "@/lib/api";
-import type { ReviewQuestion, EvaluateResponse } from "@/types/api";
+import type { ReviewQuestion, EvaluateResponse, RateResponse } from "@/types/api";
 
-export type ReviewPhase = "loading" | "question" | "evaluating" | "feedback" | "rating" | "complete";
+export type ReviewPhase = "loading" | "question" | "evaluating" | "feedback" | "rating" | "scheduled" | "complete";
 
 export interface ReviewSessionState {
   questions: ReviewQuestion[];
@@ -12,6 +12,7 @@ export interface ReviewSessionState {
   phase: ReviewPhase;
   currentAnswer: string;
   evaluation: EvaluateResponse | null;
+  lastSchedule: RateResponse | null;
   sessionStats: {
     total: number;
     answered: number;
@@ -29,7 +30,8 @@ type ReviewAction =
   | { type: "EVALUATE_SUCCESS"; evaluation: EvaluateResponse }
   | { type: "EVALUATE_ERROR"; error: string }
   | { type: "START_RATE" }
-  | { type: "RATE_SUCCESS"; rating: 1 | 2 | 3 | 4 }
+  | { type: "RATE_SUCCESS"; rating: 1 | 2 | 3 | 4; schedule: RateResponse }
+  | { type: "ADVANCE_QUESTION" }
   | { type: "RATE_ERROR"; error: string }
   | { type: "END_SESSION" }
   | { type: "SET_ERROR"; error: string };
@@ -40,6 +42,7 @@ const initialState: ReviewSessionState = {
   phase: "loading",
   currentAnswer: "",
   evaluation: null,
+  lastSchedule: null,
   sessionStats: {
     total: 0,
     answered: 0,
@@ -80,6 +83,19 @@ function reducer(state: ReviewSessionState, action: ReviewAction): ReviewSession
       const newRatings = { ...state.sessionStats.ratings };
       newRatings[action.rating] += 1;
       const newAnswered = state.sessionStats.answered + 1;
+      return {
+        ...state,
+        phase: "scheduled",
+        lastSchedule: action.schedule,
+        sessionStats: {
+          ...state.sessionStats,
+          answered: newAnswered,
+          ratings: newRatings,
+        },
+        error: null,
+      };
+    }
+    case "ADVANCE_QUESTION": {
       const nextIndex = state.currentIndex + 1;
       const isComplete = nextIndex >= state.questions.length;
       return {
@@ -88,11 +104,7 @@ function reducer(state: ReviewSessionState, action: ReviewAction): ReviewSession
         phase: isComplete ? "complete" : "question",
         currentAnswer: "",
         evaluation: null,
-        sessionStats: {
-          ...state.sessionStats,
-          answered: newAnswered,
-          ratings: newRatings,
-        },
+        lastSchedule: null,
         error: null,
       };
     }
@@ -110,6 +122,19 @@ function reducer(state: ReviewSessionState, action: ReviewAction): ReviewSession
 export function useReviewSession() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const isSubmitting = useRef(false);
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-advance from scheduled phase after 1.5s
+  useEffect(() => {
+    if (state.phase === "scheduled") {
+      advanceTimerRef.current = setTimeout(() => {
+        dispatch({ type: "ADVANCE_QUESTION" });
+      }, 1500);
+      return () => {
+        if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+      };
+    }
+  }, [state.phase]);
 
   const loadQuestions = useCallback(async () => {
     try {
@@ -162,13 +187,13 @@ export function useReviewSession() {
       isSubmitting.current = true;
       dispatch({ type: "START_RATE" });
       try {
-        await rateQuestion({
+        const schedule = await rateQuestion({
           question_id: question.question_id,
           rating,
           user_answer: state.currentAnswer,
           ai_feedback: state.evaluation?.feedback,
         });
-        dispatch({ type: "RATE_SUCCESS", rating });
+        dispatch({ type: "RATE_SUCCESS", rating, schedule });
       } catch (err) {
         dispatch({
           type: "RATE_ERROR",
