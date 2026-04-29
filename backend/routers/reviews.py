@@ -1,8 +1,9 @@
 """
-Reviews router — due questions, answer evaluation, FSRS rating.
-GET  /due      → get questions due for review
-POST /evaluate → evaluate user's answer with LLM
-POST /rate     → apply FSRS rating (user's final choice)
+Reviews router — due questions, answer evaluation, FSRS rating, focus sessions.
+GET  /due           → get questions due for review
+POST /evaluate      → evaluate user's answer with LLM
+POST /rate          → apply FSRS rating (user's final choice)
+POST /focus-session → start a focused review on weak categories
 """
 from fastapi import APIRouter, Request, HTTPException, Query, Depends
 from core.rate_limiter import rate_limit
@@ -10,6 +11,7 @@ from models.review_models import (
     DueResponse, EvaluateRequest, EvaluateResponse,
     RateRequest, RateResponse,
 )
+from models.analytics_models import FocusSessionRequest
 from services.review_service import ReviewService
 
 router = APIRouter()
@@ -55,3 +57,14 @@ async def rate_question(body: RateRequest, request: Request):
         return await service.rate(body)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/focus-session", response_model=DueResponse)
+async def focus_session(body: FocusSessionRequest, request: Request):
+    """Start a review session targeting specific weak categories."""
+    service = ReviewService(
+        db_pool=request.app.state.db_pool,
+        openai_client=request.app.state.openai,
+        scheduler=request.app.state.scheduler,
+    )
+    return await service.get_focus_session(body.categories, body.limit)

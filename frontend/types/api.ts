@@ -260,3 +260,185 @@ export interface QuestionStatsSummary {
   avg_stability?: number;
   most_failed: { id: string; question_text: string; accuracy_rate: number }[];
 }
+
+// Interview types
+export interface InterviewQuestion {
+  question_id: string | null;
+  question_text: string;
+  question_order: number;
+}
+
+export interface StartInterviewResponse {
+  interview_id: string;
+  topic: string;
+  difficulty: string;
+  duration_minutes: number;
+  total_questions: number;
+  first_question: InterviewQuestion;
+}
+
+export interface InterviewAnswerResponse {
+  score: number;
+  feedback: string;
+  follow_up_question: string | null;
+  next_question: InterviewQuestion | null;
+  done: boolean;
+}
+
+export interface InterviewSummary {
+  interview_id: string;
+  topic: string;
+  difficulty: string;
+  overall_score: number;
+  total_questions: number;
+  correct_count: number;
+  partial_count: number;
+  wrong_count: number;
+  strengths: string[];
+  weaknesses: string[];
+  improvement_tips: string[];
+  answers: Array<{
+    question_text: string;
+    user_answer: string | null;
+    score: number | null;
+    feedback: string | null;
+  }>;
+  duration_seconds: number | null;
+}
+
+export interface InterviewListItem {
+  id: string;
+  topic: string;
+  difficulty: string;
+  overall_score: number | null;
+  total_questions: number;
+  correct_count: number;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface InterviewListResponse {
+  interviews: InterviewListItem[];
+  total: number;
+}
+
+// Behavioral types
+export interface StarStory {
+  id: string;
+  capture_id: string | null;
+  title: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  competency: string;
+  strength_rating: number;
+  times_practiced: number;
+  last_practiced_at: string | null;
+  created_at: string;
+}
+
+export interface StarStoryListItem {
+  id: string;
+  title: string;
+  competency: string;
+  strength_rating: number;
+  times_practiced: number;
+  created_at: string;
+}
+
+export interface StarStoryListResponse {
+  stories: StarStoryListItem[];
+  total: number;
+}
+
+export interface BehavioralCaptureResponse {
+  story_id: string;
+  capture_id: string;
+  title: string;
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  competency: string;
+  strength_rating: number;
+}
+
+export interface PracticeQuestionResponse {
+  question: string;
+  competency: string;
+  tips: string;
+}
+
+export interface BehavioralEvaluation {
+  situation_score: number;
+  task_score: number;
+  action_score: number;
+  result_score: number;
+  overall_score: number;
+  feedback: string;
+  suggestions: string[];
+}
+
+export interface CompetencyCoverage {
+  competency: string;
+  story_count: number;
+  avg_strength: number | null;
+  last_practiced: string | null;
+}
+
+export interface BehavioralCoverageResponse {
+  competencies: CompetencyCoverage[];
+  total_competencies: number;
+  covered_competencies: number;
+}
+
+// Topic coverage types
+export interface TopicCoverage {
+  category: string;
+  total_questions: number;
+  reviewed_count: number;
+  mastered_count: number;
+  weak_count: number;
+  last_reviewed: string | null;
+}
+
+export interface TopicCoverageResponse {
+  categories: TopicCoverage[];
+  uncategorized_count: number;
+}
+
+// Weak categories
+export interface WeakCategory {
+  category: string;
+  total_questions: number;
+  avg_retention: number;
+  fail_rate: number;
+  suggested_action: string;
+}
+
+export interface WeakCategoriesResponse {
+  weak_categories: WeakCategory[];
+}
+
+// Streak info
+export interface StreakMilestone {
+  milestone: number;
+  achieved_at: string;
+}
+
+export interface StreakInfoResponse {
+  current_streak: number;
+  longest_streak: number;
+  next_milestone: number | null;
+  days_to_milestone: number | null;
+  streak_at_risk: boolean;
+  milestones_achieved: StreakMilestone[];
+}
+
+// Focus session
+export interface FocusSessionRequest {
+  categories: string[];
+  limit: number;
+}

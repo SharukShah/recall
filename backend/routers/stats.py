@@ -1,10 +1,18 @@
 """
-Stats router — dashboard + analytics data.
+Stats router — dashboard data + interview prep analytics.
+GET /dashboard        → due count, total captures, total questions, reviews today, streak
+GET /topic-coverage   → question coverage per category
+GET /weak-categories  → category-level weakness
+GET /streak-info      → streak milestones and risk
 """
-from fastapi import APIRouter, Request, Query, Depends
+from fastapi import APIRouter, Request
 from core.db_queries import get_dashboard_stats
-from core.rate_limiter import rate_limit
 from services.stats_service import StatsService
+from models.analytics_models import (
+    TopicCoverageResponse,
+    WeakCategoriesResponse,
+    StreakInfoResponse,
+)
 
 router = APIRouter()
 
@@ -16,29 +24,22 @@ async def dashboard(request: Request):
     return stats
 
 
-@router.get("/analytics", dependencies=[Depends(rate_limit(10, 60))])
-async def analytics(request: Request):
-    """Get comprehensive analytics data."""
-    service = StatsService(request.app.state.db_pool)
-    return await service.get_analytics()
+@router.get("/topic-coverage", response_model=TopicCoverageResponse)
+async def topic_coverage(request: Request):
+    """Get question coverage stats per category."""
+    service = StatsService(db_pool=request.app.state.db_pool)
+    return await service.get_topic_coverage()
 
 
-@router.get("/analytics/retention", dependencies=[Depends(rate_limit(10, 60))])
-async def retention_curve(request: Request, weeks: int = Query(12, ge=1, le=52)):
-    """Get retention rate over time."""
-    service = StatsService(request.app.state.db_pool)
-    return await service.get_retention_curve(weeks)
+@router.get("/weak-categories", response_model=WeakCategoriesResponse)
+async def weak_categories(request: Request):
+    """Get category-level weakness aggregation."""
+    service = StatsService(db_pool=request.app.state.db_pool)
+    return await service.get_weak_categories()
 
 
-@router.get("/analytics/weak-areas", dependencies=[Depends(rate_limit(10, 60))])
-async def weak_areas(request: Request, limit: int = Query(10, ge=1, le=50)):
-    """Get topics with lowest retention rates."""
-    service = StatsService(request.app.state.db_pool)
-    return await service.get_weak_areas(limit)
-
-
-@router.get("/analytics/activity", dependencies=[Depends(rate_limit(10, 60))])
-async def activity(request: Request, days: int = Query(90, ge=1, le=365)):
-    """Get daily activity for last N days."""
-    service = StatsService(request.app.state.db_pool)
-    return await service.get_activity(days)
+@router.get("/streak-info", response_model=StreakInfoResponse)
+async def streak_info(request: Request):
+    """Get current streak, milestones, and risk status."""
+    service = StatsService(db_pool=request.app.state.db_pool)
+    return await service.get_streak_info()

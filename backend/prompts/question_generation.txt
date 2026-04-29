@@ -22,3 +22,10 @@ Rules:
 - For each question, set fact_index to the 0-based index of the fact it references from the input list
 - For EXPLAIN_BACK questions: only generate for "concept" and "procedure" content types, max 1 per capture
 - EXPLAIN_BACK questions should ask the user to explain in their own words, not just recall facts
+
+For each question, also assign a category from this list:
+- python_basics, oop, dsa, system_design, databases, web_dev,
+  networking, os_concepts, testing, devops, behavioral, general
+
+Choose the MOST SPECIFIC category that fits. If the content doesn't clearly
+match any technical category, use "general".

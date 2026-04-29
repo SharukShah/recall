@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { useReviewSession } from "@/hooks/useReviewSession";
 import { useVoiceReview } from "@/hooks/useVoiceReview";
 import { SessionHeader } from "./SessionHeader";
@@ -14,8 +15,16 @@ import { VoiceControls } from "./VoiceControls";
 import { UpcomingQuestions } from "./UpcomingQuestions";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { Badge } from "@/components/ui/badge";
 
 export function ReviewSession() {
+  const searchParams = useSearchParams();
+  const categoriesParam = searchParams.get("categories");
+  const focusCategories = useMemo(
+    () => categoriesParam ? categoriesParam.split(",").filter(Boolean) : undefined,
+    [categoriesParam]
+  );
+
   const {
     state,
     currentQuestion,
@@ -24,7 +33,7 @@ export function ReviewSession() {
     submitRating,
     endSession,
     retryLoad,
-  } = useReviewSession();
+  } = useReviewSession(focusCategories);
 
   const voice = useVoiceReview();
 
@@ -125,6 +134,13 @@ export function ReviewSession() {
 
   return (
     <div className="space-y-6">
+      {focusCategories && focusCategories.length > 0 && (
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="gap-1">
+            Focus: {focusCategories.map(c => c.replace(/_/g, " ")).join(", ")}
+          </Badge>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <SessionHeader
           currentIndex={state.currentIndex}

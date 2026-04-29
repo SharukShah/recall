@@ -16,6 +16,7 @@ from core.db_queries import (
     get_question_for_update,
     update_question_fsrs_state,
     insert_review_log,
+    get_due_questions_by_category,
 )
 from models.review_models import (
     ReviewQuestion, DueResponse, EvaluateRequest, EvaluateResponse,
@@ -146,4 +147,23 @@ class ReviewService:
             interval_days=interval_days,
             state=new_state["state"],
             state_label=get_state_label(new_state["state"]),
+        )
+
+    async def get_focus_session(self, categories: list[str], limit: int = 10) -> DueResponse:
+        """Get due questions filtered by specific categories."""
+        questions = await get_due_questions_by_category(self.db_pool, categories, limit)
+        total = len(questions)
+
+        return DueResponse(
+            questions=[
+                ReviewQuestion(
+                    question_id=str(q["id"]),
+                    question_text=q["question_text"],
+                    question_type=q["question_type"],
+                    mnemonic_hint=q.get("mnemonic_hint"),
+                    technique_used=q.get("technique_used"),
+                )
+                for q in questions
+            ],
+            total_due=total,
         )

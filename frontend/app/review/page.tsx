@@ -1,5 +1,10 @@
 import { ReviewSession } from "@/components/review/ReviewSession";
+import { Suspense } from "react";
 
 export default function ReviewPage() {
-  return <ReviewSession />;
+  return (
+    <Suspense>
+      <ReviewSession />
+    </Suspense>
+  );
 }

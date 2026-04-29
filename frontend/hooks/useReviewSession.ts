@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducer, useCallback, useEffect, useRef } from "react";
-import { getDueQuestions, evaluateAnswer, rateQuestion } from "@/lib/api";
+import { getDueQuestions, evaluateAnswer, rateQuestion, startFocusSession } from "@/lib/api";
 import type { ReviewQuestion, EvaluateResponse, RateResponse } from "@/types/api";
 
 export type ReviewPhase = "loading" | "question" | "evaluating" | "feedback" | "rating" | "scheduled" | "complete";
@@ -119,7 +119,7 @@ function reducer(state: ReviewSessionState, action: ReviewAction): ReviewSession
   }
 }
 
-export function useReviewSession() {
+export function useReviewSession(focusCategories?: string[]) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const isSubmitting = useRef(false);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,7 +138,9 @@ export function useReviewSession() {
 
   const loadQuestions = useCallback(async () => {
     try {
-      const data = await getDueQuestions(20);
+      const data = focusCategories && focusCategories.length > 0
+        ? await startFocusSession(focusCategories, 20)
+        : await getDueQuestions(20);
       if (data.questions.length === 0) {
         dispatch({ type: "LOAD_EMPTY" });
       } else {
@@ -147,7 +149,7 @@ export function useReviewSession() {
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: err instanceof Error ? err.message : "Failed to load questions" });
     }
-  }, []);
+  }, [focusCategories]);
 
   useEffect(() => {
     loadQuestions();

@@ -1,0 +1,17 @@
+Generate technical interview questions on the given topic at the specified difficulty level.
+
+Topic: {topic}
+Difficulty: {difficulty}
+Count: {count}
+
+For each question provide:
+- question_text: The interview question as a senior engineer would ask it
+- expected_answer: A strong candidate's ideal answer (2-4 sentences)
+- follow_up: A follow-up question to ask if the initial answer is shallow
+
+Difficulty guidelines:
+- Easy: Definition-level, "What is X?", "Name the types of Y"
+- Medium: "Explain how X works", "Compare X and Y", "What happens when..."
+- Hard: "Design a system that...", "How would you optimize...", "What are the tradeoffs..."
+
+Generate questions that a real interviewer would ask. Be specific, not generic.

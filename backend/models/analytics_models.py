@@ -1,5 +1,5 @@
 """Pydantic models for Analytics Dashboard endpoints."""
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MasteryDistribution(BaseModel):
@@ -68,3 +68,50 @@ class AnalyticsResponse(BaseModel):
     learning_velocity: LearningVelocity
     review_consistency: ReviewConsistency
     summary: AnalyticsSummary
+
+
+# --- Interview Prep Analytics ---
+
+class TopicCoverage(BaseModel):
+    category: str
+    total_questions: int
+    reviewed_count: int
+    mastered_count: int
+    weak_count: int
+    last_reviewed: str | None = None
+
+
+class TopicCoverageResponse(BaseModel):
+    categories: list[TopicCoverage]
+    uncategorized_count: int
+
+
+class WeakCategory(BaseModel):
+    category: str
+    total_questions: int
+    avg_retention: float
+    fail_rate: float
+    suggested_action: str
+
+
+class WeakCategoriesResponse(BaseModel):
+    weak_categories: list[WeakCategory]
+
+
+class FocusSessionRequest(BaseModel):
+    categories: list[str] = Field(..., min_length=1)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class StreakMilestone(BaseModel):
+    milestone: int
+    achieved_at: str
+
+
+class StreakInfoResponse(BaseModel):
+    current_streak: int
+    longest_streak: int
+    next_milestone: int | None = None
+    days_to_milestone: int | None = None
+    streak_at_risk: bool
+    milestones_achieved: list[StreakMilestone]

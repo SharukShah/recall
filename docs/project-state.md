@@ -1,8 +1,8 @@
 # Project State: ReCall — Voice-First Personal Memory Assistant
 
-> Last Updated: 2026-04-29 (Question Bank + Upcoming Preview features added)
-> Current Phase: Implementation — New features added
-> Next Agent: Testing - Critic (validate new question management endpoints)
+> Last Updated: 2026-04-30 (Interview Prep features added — 5 features, 41 tests)
+> Current Phase: Implementation — Interview Prep complete
+> Next Agent: None (all features built and tested)
 
 ## Pipeline Status
 
@@ -153,6 +153,10 @@
 | 52 | 2026-04-19 | Orchestrator (Manual Fix) | Fix UI fetch failures | Completed — Fixed Analytics + Graph pages to use proper API functions instead of hardcoded fetch calls. Both pages were falling back to wrong port (8000 vs 8001). Updated analytics/page.tsx to use getAnalytics(), getRetentionCurve(), getWeakAreas(), getActivity() from lib/api.ts. Updated graph/page.tsx to use getGraphData() from lib/api.ts. Backend verified: all endpoints operational (analytics summary, graph with 94 nodes + 166 edges). User instructed to reload pages. |
 | 53 | 2026-04-19 | Orchestrator (Manual Fix) | Fix Analytics SQL bugs | Completed — Fixed two critical SQL errors in stats_service.py: (1) Retention curve: changed `($1 \|\| ' weeks')::interval` to `($1 * INTERVAL '1 week')` to fix asyncpg type error. (2) Weak areas: changed `q.source_point_id` to `q.extracted_point_id` to match actual schema column name. Backend restarted. All 4 analytics endpoints now working: main analytics, retention curve (1 data point), weak areas (2 areas), activity. System fully operational. |
 | 54 | 2026-04-19 | Orchestrator (Manual Fix) | Fix Knowledge Graph rate limit | Completed — Increased rate limit from 1/min to 10/min in graph.py router. Old limit was too restrictive for UI interactions (graph page makes multiple requests on load for node details). Updated line 14: `rate_limit(1, 60)` → `rate_limit(10, 60)`. Backend restarted (PID 24404). Tested with 10 rapid requests: all succeeded. Frontend now loads knowledge graph without rate limit errors. |
+| 55 | 2026-04-30 | Architecture Agent | Interview Prep design — 5 features | Completed — docs/interview-prep-design.md. Mock Interview, Topic Coverage, Weak Area Detection, Streak Enhancement, Behavioral STAR. 4 new tables, 16 endpoints, 5 prompts, 7 voice functions. |
+| 56 | 2026-04-30 | Coding Agent | Interview Prep backend — 5 features | Completed — migration_interview_prep.sql (4 tables + 2 columns), 2 new services (interview_service.py, behavioral_service.py), 2 new routers (interviews.py, behavioral.py), 2 new model files, 5 new LLM prompts, 7 new voice agent functions. Stats + reviews routers extended. |
+| 57 | 2026-04-30 | Coding Agent | Interview Prep frontend — 5 features | Completed — 6 new pages (/interview hub, /mock, /history, /results/[id], /behavioral, /behavioral/new), 11 new components, API client + types extended. 22 total pages, build clean. |
+| 58 | 2026-04-30 | Orchestrator | Test all interview prep features | Completed — 41/41 integration tests pass. All existing tests unaffected: 36/36 questions, 31/31 voice, 8/8 review, 20/21 live (1 pre-existing WS 403). |
 
 ## Skipped Stages
 

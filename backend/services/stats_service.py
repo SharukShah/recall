@@ -3,6 +3,12 @@ Stats service — analytics queries.
 """
 from asyncpg import Pool
 from datetime import datetime, timedelta, timezone
+from core.db_queries import (
+    get_topic_coverage as db_get_topic_coverage,
+    get_weak_categories as db_get_weak_categories,
+    get_streak_info as db_get_streak_info,
+    insert_streak_milestone,
+)
 from models.analytics_models import (
     AnalyticsResponse,
     MasteryDistribution,
@@ -15,6 +21,12 @@ from models.analytics_models import (
     WeakArea,
     ActivityResponse,
     ActivityDay,
+    TopicCoverageResponse,
+    TopicCoverage,
+    WeakCategoriesResponse,
+    WeakCategory,
+    StreakInfoResponse,
+    StreakMilestone,
 )
 
 
@@ -285,3 +297,83 @@ class StatsService:
             ]
             
             return ActivityResponse(days=activity_days)
+
+    async def get_topic_coverage(self) -> TopicCoverageResponse:
+        """Get question coverage stats grouped by category."""
+        data = await db_get_topic_coverage(self.db_pool)
+        categories = []
+        for row in data["categories"]:
+            last_reviewed = row.get("last_reviewed")
+            if last_reviewed and hasattr(last_reviewed, "isoformat"):
+                last_reviewed = last_reviewed.isoformat()
+            categories.append(TopicCoverage(
+                category=row["category"],
+                total_questions=row["total_questions"],
+                reviewed_count=row["reviewed_count"],
+                mastered_count=row["mastered_count"],
+                weak_count=row["weak_count"],
+                last_reviewed=str(last_reviewed) if last_reviewed else None,
+            ))
+        return TopicCoverageResponse(
+            categories=categories,
+            uncategorized_count=data["uncategorized_count"],
+        )
+
+    async def get_weak_categories(self) -> WeakCategoriesResponse:
+        """Get category-level weakness aggregation."""
+        rows = await db_get_weak_categories(self.db_pool)
+        return WeakCategoriesResponse(
+            weak_categories=[
+                WeakCategory(
+                    category=r["category"],
+                    total_questions=r["total_questions"],
+                    avg_retention=float(r["avg_retention"]),
+                    fail_rate=float(r["fail_rate"]),
+                    suggested_action=r["suggested_action"],
+                )
+                for r in rows
+            ]
+        )
+
+    async def get_streak_info(self) -> StreakInfoResponse:
+        """Get streak, milestones, risk status."""
+        data = await db_get_streak_info(self.db_pool)
+        current = data["current_streak"]
+        longest = data["longest_streak"]
+
+        # Milestone logic
+        milestones_list = [7, 14, 30, 60, 100, 365]
+        next_milestone = None
+        days_to = None
+        for m in milestones_list:
+            if m > current:
+                next_milestone = m
+                days_to = m - current
+                break
+
+        # Check if current_streak just hit a milestone → insert
+        achieved = {m["milestone"] for m in data["milestones"]}
+        for m in milestones_list:
+            if current >= m and m not in achieved:
+                await insert_streak_milestone(self.db_pool, m)
+
+        # Re-fetch milestones after potential insert
+        if any(current >= m and m not in achieved for m in milestones_list):
+            data = await db_get_streak_info(self.db_pool)
+
+        milestones_achieved = [
+            StreakMilestone(
+                milestone=m["milestone"],
+                achieved_at=m["achieved_at"].isoformat() if hasattr(m["achieved_at"], "isoformat") else str(m["achieved_at"]),
+            )
+            for m in data["milestones"]
+        ]
+
+        return StreakInfoResponse(
+            current_streak=current,
+            longest_streak=longest,
+            next_milestone=next_milestone,
+            days_to_milestone=days_to,
+            streak_at_risk=data["streak_at_risk"],
+            milestones_achieved=milestones_achieved,
+        )

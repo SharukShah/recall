@@ -118,6 +118,114 @@ UNIFIED_FUNCTIONS = [
         "description": "End the voice session gracefully. Processes pending captures and generates summary. Call when user says 'stop', 'bye', 'I'm done', 'goodbye'.",
         "parameters": {"type": "object", "properties": {}},
     },
+    # -- Interview Prep Functions --
+    {
+        "name": "start_mock_interview",
+        "description": "Start a mock technical interview session. The voice agent switches to interviewer persona. Ask questions, evaluate answers, give follow-ups. Call when user says 'mock interview', 'interview practice', 'interview me'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["python", "dsa", "system_design", "oop", "web_dev", "databases", "behavioral"],
+                    "description": "Interview topic area",
+                },
+                "difficulty": {
+                    "type": "string",
+                    "enum": ["easy", "medium", "hard"],
+                    "description": "Question difficulty. Default medium.",
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "enum": [15, 30, 45],
+                    "description": "Interview length in minutes. Default 30.",
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "submit_interview_answer",
+        "description": "MANDATORY during mock interview: submit the candidate's answer for evaluation. Returns score, feedback, and optionally a follow-up question.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "interview_id": {"type": "string"},
+                "question_order": {"type": "integer"},
+                "user_answer": {"type": "string"},
+            },
+            "required": ["interview_id", "question_order", "user_answer"],
+        },
+    },
+    {
+        "name": "end_mock_interview",
+        "description": "End the mock interview and get the performance summary. Call when user says 'end interview', 'I'm done', or time is up.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "interview_id": {"type": "string"},
+            },
+            "required": ["interview_id"],
+        },
+    },
+    {
+        "name": "start_focus_review",
+        "description": "Start a review session targeting specific weak categories only. Call when user says 'practice my weak areas', 'focus on DSA', 'review weak topics'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "categories": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of categories to focus on (e.g., ['dsa', 'oop'])",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max questions. Default 10.",
+                },
+            },
+            "required": ["categories"],
+        },
+    },
+    {
+        "name": "practice_behavioral",
+        "description": "Start behavioral interview practice. Asks a behavioral question, user answers, AI evaluates using STAR framework. Call when user says 'practice behavioral', 'behavioral interview', 'STAR practice'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "competency": {
+                    "type": "string",
+                    "enum": ["leadership", "teamwork", "conflict_resolution", "problem_solving", "communication", "adaptability", "initiative", "failure_handling"],
+                    "description": "Which competency to practice. Random if omitted.",
+                },
+            },
+        },
+    },
+    {
+        "name": "evaluate_behavioral_answer",
+        "description": "Evaluate a behavioral answer using STAR framework. Call after the user answers a behavioral question.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "competency": {"type": "string"},
+                "question": {"type": "string"},
+                "user_answer": {"type": "string"},
+            },
+            "required": ["competency", "question", "user_answer"],
+        },
+    },
+    {
+        "name": "capture_behavioral_story",
+        "description": "Capture a behavioral story from conversation. Extracts STAR components automatically. Call when user finishes telling a story and wants to save it.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "narrative": {"type": "string", "description": "The full story narrative"},
+                "competency": {"type": "string", "description": "Which competency this story demonstrates"},
+            },
+            "required": ["narrative", "competency"],
+        },
+    },
 ]
 
 
@@ -161,6 +269,18 @@ class UnifiedVoiceSession:
 
     # Context (loaded once at start)
     user_context: dict | None = None
+
+    # Interview state
+    interview_id: str | None = None
+    interview_topic: str | None = None
+    interview_question_order: int = 0
+    interview_awaiting_answer: bool = False
+    interview_awaiting_follow_up: bool = False
+
+    # Behavioral state
+    behavioral_question: str | None = None
+    behavioral_competency: str | None = None
+    behavioral_awaiting_answer: bool = False
 
 
 # Keep old name as alias for backward compatibility
@@ -286,6 +406,29 @@ One sentence only.
 ## Mid-Conversation Switching
 - In Review: Pause, handle new request, offer to resume: "Continue review? [N] questions left."
 - For quick questions during Review: Answer inline, then resume.
+
+### 8. Mock Interview
+When the user wants interview practice ("mock interview", "interview me on DSA"):
+- Call start_mock_interview with topic, difficulty, duration.
+- SWITCH PERSONA: You are now a Senior Engineer Interviewer. Professional, probing, neutral.
+- Do NOT give hints or help during the interview. Let the candidate think.
+- After each answer, call submit_interview_answer. Read feedback briefly.
+- If follow_up_question is returned, ask it before moving to the next question.
+- When done or user says "end interview", call end_mock_interview and read the summary.
+- After interview, switch back to your normal ReCall persona.
+
+### 9. Focus Review
+When user says "practice my weak areas" or "focus on [topic]":
+- Call start_focus_review with the specified categories.
+- Follow the same review loop as normal review (evaluate_answer, next_question).
+
+### 10. Behavioral Interview Practice
+When user wants behavioral practice ("behavioral interview", "STAR practice"):
+- Call practice_behavioral with optional competency.
+- Read the behavioral question.
+- After they answer, call evaluate_behavioral_answer.
+- Give detailed STAR feedback: what had clear Situation, what lacked specific Action, etc.
+- Offer: "Want to save this story?" → call capture_behavioral_story.
 
 ## Important Rules
 - NEVER give away answers before the user attempts them in review.
@@ -528,6 +671,27 @@ class VoiceSessionManager:
 
         elif fn == "end_session":
             return await self._end_session(session)
+
+        elif fn == "start_mock_interview":
+            return await self._start_mock_interview(session, params)
+
+        elif fn == "submit_interview_answer":
+            return await self._submit_interview_answer(session, params)
+
+        elif fn == "end_mock_interview":
+            return await self._end_mock_interview(session, params)
+
+        elif fn == "start_focus_review":
+            return await self._start_focus_review(session, params)
+
+        elif fn == "practice_behavioral":
+            return await self._practice_behavioral(session, params)
+
+        elif fn == "evaluate_behavioral_answer":
+            return await self._evaluate_behavioral_answer(session, params)
+
+        elif fn == "capture_behavioral_story":
+            return await self._capture_behavioral_story(session, params)
 
         else:
             logger.warning(f"Unknown function: {fn}")
@@ -836,6 +1000,157 @@ class VoiceSessionManager:
             "questions_count": resp.questions_count,
             "capture_id": resp.capture_id,
         }
+
+    # -- Interview Prep dispatch methods --
+
+    async def _start_mock_interview(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.interview_service import InterviewService
+        svc = InterviewService(self.db_pool, self.openai, self.scheduler)
+        topic = params.get("topic", "general")
+        difficulty = params.get("difficulty", "medium")
+        duration = params.get("duration_minutes", 30)
+        try:
+            result = await svc.start_interview(topic, difficulty, duration)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.interview_id = result["interview_id"]
+        session.interview_topic = topic
+        session.interview_question_order = 1
+        session.interview_awaiting_answer = True
+        session.active_workflow = "interview"
+        return {
+            "interview_id": result["interview_id"],
+            "total_questions": result["total_questions"],
+            "instruction": "You are now a Senior Engineer Interviewer. Read the first question. After the user answers, call submit_interview_answer.",
+            "first_question": result.get("first_question"),
+        }
+
+    async def _submit_interview_answer(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.interview_service import InterviewService
+        svc = InterviewService(self.db_pool, self.openai, self.scheduler)
+        interview_id = params.get("interview_id", session.interview_id or "")
+        order = params.get("question_order", session.interview_question_order)
+        user_answer = params.get("user_answer", "")
+        if not interview_id:
+            return {"error": "No active interview. Call start_mock_interview first."}
+        try:
+            result = await svc.evaluate_interview_answer(interview_id, order, user_answer)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.interview_awaiting_answer = False
+        if result.get("follow_up_question"):
+            session.interview_awaiting_follow_up = True
+        elif result.get("next_question"):
+            session.interview_question_order = result["next_question"]["question_order"]
+            session.interview_awaiting_answer = True
+        return result
+
+    async def _end_mock_interview(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.interview_service import InterviewService
+        svc = InterviewService(self.db_pool, self.openai, self.scheduler)
+        interview_id = params.get("interview_id", session.interview_id or "")
+        if not interview_id:
+            return {"error": "No active interview."}
+        try:
+            result = await svc.complete_interview(interview_id)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.interview_id = None
+        session.interview_topic = None
+        session.interview_question_order = 0
+        session.interview_awaiting_answer = False
+        session.interview_awaiting_follow_up = False
+        session.active_workflow = None
+        return result
+
+    async def _start_focus_review(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        categories = params.get("categories", [])
+        limit = params.get("limit", 10)
+        if not categories:
+            return {"error": "No categories specified."}
+        svc = ReviewService(self.db_pool, self.openai, self.scheduler)
+        due_resp = await svc.get_focus_session(categories, limit)
+        session.review_queue = [
+            {
+                "question_id": q.question_id,
+                "question_text": q.question_text,
+                "question_type": q.question_type,
+                "mnemonic_hint": q.mnemonic_hint,
+                "technique_used": q.technique_used,
+            }
+            for q in due_resp.questions
+        ]
+        session.review_index = 0
+        session.rated_question_ids = set()
+        session.active_workflow = "review"
+        if not session.review_queue:
+            session.active_workflow = None
+            return {"due_count": 0, "message": "No questions due in those categories."}
+        first = session.review_queue[0]
+        session.review_awaiting_answer = True
+        session.review_current_question_id = first["question_id"]
+        return {
+            "due_count": len(session.review_queue),
+            "instruction": "Focus review started. Read the question to the user. Call evaluate_answer after they answer.",
+            "first_question": {
+                "question_id": first["question_id"],
+                "question_text": first["question_text"],
+                "question_type": first["question_type"],
+                "mnemonic_hint": first.get("mnemonic_hint"),
+                "question_number": 1,
+                "total_questions": len(session.review_queue),
+            },
+        }
+
+    async def _practice_behavioral(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.behavioral_service import BehavioralService
+        svc = BehavioralService(self.db_pool, self.openai)
+        competency = params.get("competency")
+        try:
+            result = await svc.get_practice_question(competency)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.behavioral_question = result["question"]
+        session.behavioral_competency = result["competency"]
+        session.behavioral_awaiting_answer = True
+        session.active_workflow = "behavioral"
+        return {
+            "question": result["question"],
+            "competency": result["competency"],
+            "tips": result["tips"],
+            "instruction": "Read the behavioral question. After the user answers, call evaluate_behavioral_answer.",
+        }
+
+    async def _evaluate_behavioral_answer(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.behavioral_service import BehavioralService
+        svc = BehavioralService(self.db_pool, self.openai)
+        competency = params.get("competency", session.behavioral_competency or "general")
+        question = params.get("question", session.behavioral_question or "")
+        user_answer = params.get("user_answer", "")
+        try:
+            result = await svc.evaluate_practice_answer(competency, question, user_answer)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.behavioral_awaiting_answer = False
+        result["instruction"] = "Give detailed STAR feedback. Ask if they want to save this story."
+        return result
+
+    async def _capture_behavioral_story(self, session: UnifiedVoiceSession, params: dict) -> dict:
+        from services.behavioral_service import BehavioralService
+        svc = BehavioralService(self.db_pool, self.openai)
+        narrative = params.get("narrative", "")
+        competency = params.get("competency", session.behavioral_competency or "")
+        if not narrative or not competency:
+            return {"error": "Missing narrative or competency."}
+        try:
+            result = await svc.capture_story(narrative, competency)
+        except ValueError as e:
+            return {"error": str(e)}
+        session.active_workflow = None
+        session.behavioral_question = None
+        session.behavioral_competency = None
+        session.behavioral_awaiting_answer = False
+        return result
 
     async def _end_session(self, session: UnifiedVoiceSession) -> dict:
         duration = int(time.monotonic() - session.started_at)

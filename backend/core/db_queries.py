@@ -75,6 +75,7 @@ async def insert_question(
     technique_used: str | None,
     mnemonic_hint: str | None,
     fsrs_state: dict,
+    category: str | None = None,
 ) -> str:
     """Insert a question with FSRS initial state and return its UUID."""
     question_id = str(uuid.uuid4())
@@ -84,9 +85,10 @@ async def insert_question(
             INSERT INTO questions (
                 id, extracted_point_id, question_text, answer_text,
                 question_type, technique_used, mnemonic_hint,
-                due, stability, difficulty, step, state, last_review
+                due, stability, difficulty, step, state, last_review,
+                category
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             """,
             uuid.UUID(question_id),
             uuid.UUID(extracted_point_id),
@@ -101,6 +103,7 @@ async def insert_question(
             fsrs_state["step"],
             fsrs_state["state"],
             fsrs_state["last_review"],
+            category,
         )
     return question_id
 
@@ -783,3 +786,561 @@ async def set_capture_tags(
             result_tags.append(name)
 
         return result_tags
+
+
+# ============================================================
+# INTERVIEW PREP QUERIES
+# ============================================================
+
+async def get_topic_coverage(pool: asyncpg.Pool) -> dict:
+    """Get question coverage stats grouped by category."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                q.category,
+                COUNT(*) AS total_questions,
+                COUNT(DISTINCT CASE WHEN rl.id IS NOT NULL THEN q.id END) AS reviewed_count,
+                COUNT(CASE WHEN q.state = 2 THEN 1 END) AS mastered_count,
+                COUNT(CASE WHEN recent_rl.retention < 0.7 THEN 1 END) AS weak_count,
+                MAX(rl.reviewed_at) AS last_reviewed
+            FROM questions q
+            LEFT JOIN review_logs rl ON rl.question_id = q.id
+            LEFT JOIN LATERAL (
+                SELECT
+                    CASE WHEN COUNT(*) > 0
+                         THEN SUM(CASE WHEN rating >= 3 THEN 1 ELSE 0 END)::float / COUNT(*)
+                         ELSE 1.0
+                    END AS retention
+                FROM review_logs
+                WHERE question_id = q.id AND reviewed_at >= NOW() - INTERVAL '30 days'
+            ) recent_rl ON true
+            WHERE q.category IS NOT NULL
+            GROUP BY q.category
+            ORDER BY q.category
+            """
+        )
+        uncategorized = await conn.fetchval(
+            "SELECT COUNT(*) FROM questions WHERE category IS NULL"
+        )
+    return {
+        "categories": [dict(r) for r in rows],
+        "uncategorized_count": uncategorized or 0,
+    }
+
+
+async def get_weak_categories(pool: asyncpg.Pool) -> list[dict]:
+    """Get categories with low retention for weakness detection."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            WITH category_stats AS (
+                SELECT
+                    q.category,
+                    COUNT(DISTINCT q.id) AS total_questions,
+                    AVG(CASE WHEN rl.rating >= 3 THEN 1.0 ELSE 0.0 END) AS avg_retention,
+                    AVG(CASE WHEN rl.rating = 1 THEN 1.0 ELSE 0.0 END) AS fail_rate
+                FROM questions q
+                JOIN review_logs rl ON rl.question_id = q.id
+                WHERE q.category IS NOT NULL
+                  AND rl.reviewed_at >= NOW() - INTERVAL '30 days'
+                GROUP BY q.category
+                HAVING COUNT(DISTINCT q.id) >= 3
+            )
+            SELECT
+                category,
+                total_questions,
+                avg_retention,
+                fail_rate,
+                CASE
+                    WHEN avg_retention >= 0.85 THEN 'You''re strong here'
+                    WHEN avg_retention >= 0.70 THEN 'Review more'
+                    ELSE 'Practice daily'
+                END AS suggested_action
+            FROM category_stats
+            ORDER BY avg_retention ASC
+            """
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_due_questions_by_category(
+    pool: asyncpg.Pool,
+    categories: list[str],
+    limit: int = 10,
+) -> list[dict]:
+    """Get due questions filtered by categories."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, question_text, question_type, mnemonic_hint, technique_used,
+                   state, due, category
+            FROM questions
+            WHERE (state IN (0, 1, 3) OR (state = 2 AND due <= NOW()))
+              AND category = ANY($2)
+            ORDER BY
+                CASE state WHEN 3 THEN 1 WHEN 1 THEN 2 WHEN 0 THEN 3 WHEN 2 THEN 4 END,
+                due ASC
+            LIMIT $1
+            """,
+            limit, categories,
+        )
+    return [dict(r) for r in rows]
+
+
+# -- Mock Interview Queries --
+
+async def create_mock_interview(
+    pool_or_conn: PoolOrConn,
+    topic: str,
+    difficulty: str,
+    duration_minutes: int,
+) -> str:
+    """Create a mock interview session. Returns its UUID."""
+    interview_id = str(uuid.uuid4())
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            """
+            INSERT INTO mock_interviews (id, topic, difficulty, duration_minutes)
+            VALUES ($1, $2, $3, $4)
+            """,
+            uuid.UUID(interview_id), topic, difficulty, duration_minutes,
+        )
+    return interview_id
+
+
+async def insert_interview_answers(
+    pool_or_conn: PoolOrConn,
+    interview_id: str,
+    questions: list[dict],
+) -> None:
+    """Bulk insert interview answer rows (question_text, expected_answer, order)."""
+    async with await _acquire(pool_or_conn) as conn:
+        for q in questions:
+            await conn.execute(
+                """
+                INSERT INTO interview_answers
+                    (id, interview_id, question_id, question_text, expected_answer, question_order)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                uuid.uuid4(),
+                uuid.UUID(interview_id),
+                uuid.UUID(q["question_id"]) if q.get("question_id") else None,
+                q["question_text"],
+                q["expected_answer"],
+                q["question_order"],
+            )
+
+
+async def get_interview_answer(
+    pool: asyncpg.Pool,
+    interview_id: str,
+    question_order: int,
+) -> dict | None:
+    """Fetch a specific answer row by interview + order."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, interview_id, question_id, question_text, expected_answer,
+                   user_answer, score, feedback, follow_up_asked,
+                   follow_up_answer, follow_up_feedback, question_order, answered_at
+            FROM interview_answers
+            WHERE interview_id = $1 AND question_order = $2
+            """,
+            uuid.UUID(interview_id), question_order,
+        )
+    return dict(row) if row else None
+
+
+async def update_interview_answer(
+    pool_or_conn: PoolOrConn,
+    answer_id: str,
+    user_answer: str | None = None,
+    score: int | None = None,
+    feedback: str | None = None,
+    follow_up_asked: bool | None = None,
+    follow_up_answer: str | None = None,
+    follow_up_feedback: str | None = None,
+) -> None:
+    """Update an interview answer with score/feedback."""
+    set_parts = []
+    params: list = [uuid.UUID(answer_id)]
+    idx = 2
+    if user_answer is not None:
+        set_parts.append(f"user_answer = ${idx}")
+        params.append(user_answer)
+        idx += 1
+    if score is not None:
+        set_parts.append(f"score = ${idx}")
+        params.append(score)
+        idx += 1
+    if feedback is not None:
+        set_parts.append(f"feedback = ${idx}")
+        params.append(feedback)
+        idx += 1
+    if follow_up_asked is not None:
+        set_parts.append(f"follow_up_asked = ${idx}")
+        params.append(follow_up_asked)
+        idx += 1
+    if follow_up_answer is not None:
+        set_parts.append(f"follow_up_answer = ${idx}")
+        params.append(follow_up_answer)
+        idx += 1
+    if follow_up_feedback is not None:
+        set_parts.append(f"follow_up_feedback = ${idx}")
+        params.append(follow_up_feedback)
+        idx += 1
+    set_parts.append(f"answered_at = NOW()")
+
+    if not set_parts:
+        return
+    sql = f"UPDATE interview_answers SET {', '.join(set_parts)} WHERE id = $1"
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(sql, *params)
+
+
+async def complete_mock_interview(
+    pool_or_conn: PoolOrConn,
+    interview_id: str,
+    overall_score: float,
+    strengths: list,
+    weaknesses: list,
+    improvement_tips: list,
+    total_questions: int,
+    correct_count: int,
+    partial_count: int,
+    wrong_count: int,
+) -> None:
+    """Finalize a mock interview with scores and summary."""
+    import json as _json
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            """
+            UPDATE mock_interviews
+            SET status = 'completed',
+                overall_score = $2,
+                strengths = $3,
+                weaknesses = $4,
+                improvement_tips = $5,
+                total_questions = $6,
+                correct_count = $7,
+                partial_count = $8,
+                wrong_count = $9,
+                completed_at = NOW()
+            WHERE id = $1
+            """,
+            uuid.UUID(interview_id),
+            overall_score,
+            _json.dumps(strengths),
+            _json.dumps(weaknesses),
+            _json.dumps(improvement_tips),
+            total_questions,
+            correct_count,
+            partial_count,
+            wrong_count,
+        )
+
+
+async def list_mock_interviews(
+    pool: asyncpg.Pool,
+    topic: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> dict:
+    """List mock interviews with optional topic filter. Returns items + total."""
+    async with pool.acquire() as conn:
+        if topic:
+            rows = await conn.fetch(
+                """
+                SELECT id, topic, difficulty, overall_score, total_questions,
+                       correct_count, status, started_at, completed_at
+                FROM mock_interviews
+                WHERE topic = $3
+                ORDER BY started_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit, offset, topic,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM mock_interviews WHERE topic = $1", topic,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, topic, difficulty, overall_score, total_questions,
+                       correct_count, status, started_at, completed_at
+                FROM mock_interviews
+                ORDER BY started_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit, offset,
+            )
+            total = await conn.fetchval("SELECT COUNT(*) FROM mock_interviews")
+    return {"interviews": [dict(r) for r in rows], "total": total or 0}
+
+
+async def get_interview_detail(pool: asyncpg.Pool, interview_id: str) -> dict | None:
+    """Fetch interview with all answers."""
+    uid = uuid.UUID(interview_id)
+    async with pool.acquire() as conn:
+        interview = await conn.fetchrow(
+            """
+            SELECT id, topic, difficulty, duration_minutes, status, overall_score,
+                   strengths, weaknesses, improvement_tips,
+                   total_questions, correct_count, partial_count, wrong_count,
+                   started_at, completed_at
+            FROM mock_interviews WHERE id = $1
+            """,
+            uid,
+        )
+        if not interview:
+            return None
+        answers = await conn.fetch(
+            """
+            SELECT question_text, expected_answer, user_answer, score, feedback,
+                   follow_up_asked, follow_up_answer, follow_up_feedback, question_order
+            FROM interview_answers
+            WHERE interview_id = $1
+            ORDER BY question_order
+            """,
+            uid,
+        )
+    result = dict(interview)
+    result["answers"] = [dict(a) for a in answers]
+    return result
+
+
+# -- Streak Queries --
+
+async def get_streak_info(pool: asyncpg.Pool) -> dict:
+    """Get current/longest streak and milestones."""
+    async with pool.acquire() as conn:
+        # Current streak
+        current_streak = await conn.fetchval(
+            """
+            WITH review_dates AS (
+                SELECT DISTINCT reviewed_at::date AS d FROM review_logs
+            ),
+            streak AS (
+                SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d DESC))::int AS grp
+                FROM review_dates
+                WHERE d <= CURRENT_DATE
+            )
+            SELECT COUNT(*) FROM streak
+            WHERE grp = (SELECT grp FROM streak WHERE d = CURRENT_DATE LIMIT 1)
+            """
+        ) or 0
+
+        # Longest streak
+        longest_streak = await conn.fetchval(
+            """
+            WITH review_dates AS (
+                SELECT DISTINCT reviewed_at::date AS review_date FROM review_logs ORDER BY review_date
+            ),
+            streak_groups AS (
+                SELECT review_date,
+                       review_date - (ROW_NUMBER() OVER (ORDER BY review_date))::int * INTERVAL '1 day' AS grp
+                FROM review_dates
+            ),
+            streak_lengths AS (
+                SELECT COUNT(*) AS streak_length FROM streak_groups GROUP BY grp
+            )
+            SELECT COALESCE(MAX(streak_length), 0) FROM streak_lengths
+            """
+        ) or 0
+
+        # streak_at_risk: no reviews today
+        reviews_today = await conn.fetchval(
+            "SELECT COUNT(*) FROM review_logs WHERE reviewed_at::date = CURRENT_DATE"
+        ) or 0
+        streak_at_risk = reviews_today == 0
+
+        # Milestones achieved
+        milestones = await conn.fetch(
+            "SELECT milestone, achieved_at FROM streak_milestones ORDER BY milestone"
+        )
+
+    return {
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "streak_at_risk": streak_at_risk,
+        "milestones": [dict(m) for m in milestones],
+    }
+
+
+async def insert_streak_milestone(pool: asyncpg.Pool, milestone: int) -> None:
+    """Insert a new streak milestone if not already achieved."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO streak_milestones (id, milestone)
+            VALUES ($1, $2)
+            ON CONFLICT (milestone) DO NOTHING
+            """,
+            uuid.uuid4(), milestone,
+        )
+
+
+# -- STAR Story Queries --
+
+async def create_star_story(
+    pool_or_conn: PoolOrConn,
+    capture_id: str | None,
+    title: str,
+    situation: str,
+    task: str,
+    action: str,
+    result: str,
+    competency: str,
+    strength_rating: int,
+) -> str:
+    """Insert a STAR story. Returns its UUID."""
+    story_id = str(uuid.uuid4())
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            """
+            INSERT INTO star_stories
+                (id, capture_id, title, situation, task, action, result, competency, strength_rating)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            uuid.UUID(story_id),
+            uuid.UUID(capture_id) if capture_id else None,
+            title, situation, task, action, result, competency, strength_rating,
+        )
+    return story_id
+
+
+async def list_star_stories(
+    pool: asyncpg.Pool,
+    competency: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict:
+    """List STAR stories with optional competency filter. Returns items + total."""
+    async with pool.acquire() as conn:
+        if competency:
+            rows = await conn.fetch(
+                """
+                SELECT id, title, competency, strength_rating, times_practiced, created_at
+                FROM star_stories
+                WHERE competency = $3
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit, offset, competency,
+            )
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM star_stories WHERE competency = $1", competency,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, title, competency, strength_rating, times_practiced, created_at
+                FROM star_stories
+                ORDER BY created_at DESC
+                LIMIT $1 OFFSET $2
+                """,
+                limit, offset,
+            )
+            total = await conn.fetchval("SELECT COUNT(*) FROM star_stories")
+    return {"stories": [dict(r) for r in rows], "total": total or 0}
+
+
+async def get_star_story(pool: asyncpg.Pool, story_id: str) -> dict | None:
+    """Fetch a single STAR story."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, capture_id, title, situation, task, action, result,
+                   competency, strength_rating, times_practiced, last_practiced_at,
+                   created_at, updated_at
+            FROM star_stories WHERE id = $1
+            """,
+            uuid.UUID(story_id),
+        )
+    return dict(row) if row else None
+
+
+async def update_star_story(
+    pool: asyncpg.Pool,
+    story_id: str,
+    updates: dict,
+) -> dict | None:
+    """Partially update a STAR story. Returns updated row."""
+    allowed = {"title", "situation", "task", "action", "result", "competency", "strength_rating"}
+    filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if not filtered:
+        return await get_star_story(pool, story_id)
+
+    set_parts = ["updated_at = NOW()"]
+    params: list = [uuid.UUID(story_id)]
+    for i, (col, val) in enumerate(filtered.items(), start=2):
+        set_parts.append(f"{col} = ${i}")
+        params.append(val)
+
+    sql = f"""
+        UPDATE star_stories SET {', '.join(set_parts)}
+        WHERE id = $1
+        RETURNING id, capture_id, title, situation, task, action, result,
+                  competency, strength_rating, times_practiced, last_practiced_at,
+                  created_at, updated_at
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(sql, *params)
+    return dict(row) if row else None
+
+
+async def delete_star_story(pool: asyncpg.Pool, story_id: str) -> bool:
+    """Delete a STAR story. Returns True if deleted."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM star_stories WHERE id = $1",
+            uuid.UUID(story_id),
+        )
+    return result == "DELETE 1"
+
+
+async def get_behavioral_coverage(pool: asyncpg.Pool) -> list[dict]:
+    """Get competency coverage summary across all 8 competencies."""
+    all_competencies = [
+        "leadership", "teamwork", "conflict_resolution", "problem_solving",
+        "communication", "adaptability", "initiative", "failure_handling",
+    ]
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT competency,
+                   COUNT(*) AS story_count,
+                   AVG(strength_rating) AS avg_strength,
+                   MAX(last_practiced_at) AS last_practiced
+            FROM star_stories
+            GROUP BY competency
+            """
+        )
+    existing = {r["competency"]: dict(r) for r in rows}
+    result = []
+    for c in all_competencies:
+        if c in existing:
+            result.append(existing[c])
+        else:
+            result.append({
+                "competency": c,
+                "story_count": 0,
+                "avg_strength": None,
+                "last_practiced": None,
+            })
+    return result
+
+
+async def increment_story_practice(pool: asyncpg.Pool, story_id: str) -> None:
+    """Bump times_practiced and set last_practiced_at for a story."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE star_stories
+            SET times_practiced = times_practiced + 1,
+                last_practiced_at = NOW()
+            WHERE id = $1
+            """,
+            uuid.UUID(story_id),
+        )
