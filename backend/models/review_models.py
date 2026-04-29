@@ -69,3 +69,127 @@ class AnswerEvaluation(BaseModel):
     score: ScoreType
     feedback: str
     suggested_rating: int = Field(..., ge=1, le=4)
+
+
+# --- Question Management ---
+
+class QuestionListItem(BaseModel):
+    id: str
+    question_text: str
+    answer_text: str
+    question_type: str
+    technique_used: str | None
+    mnemonic_hint: str | None
+    state: int
+    due: str
+    stability: float | None
+    difficulty: float | None
+    last_review: str | None
+    created_at: str
+    capture_id: str | None
+    review_count: int
+    last_rating: int | None
+    source_text: str | None
+
+
+class ReviewLogEntry(BaseModel):
+    rating: int
+    user_answer: str | None
+    ai_feedback: str | None
+    reviewed_at: str
+
+
+class QuestionDetail(BaseModel):
+    id: str
+    question_text: str
+    answer_text: str
+    question_type: str
+    technique_used: str | None
+    mnemonic_hint: str | None
+    state: int
+    due: str
+    stability: float | None
+    difficulty: float | None
+    last_review: str | None
+    created_at: str
+    capture_id: str | None
+    review_count: int
+    last_rating: int | None
+    source_text: str | None
+    accuracy_rate: float | None
+    extracted_point_content: str | None
+    capture_raw_text: str | None
+    review_logs: list[ReviewLogEntry]
+
+
+class QuestionListResponse(BaseModel):
+    questions: list[QuestionListItem]
+    total: int
+
+
+class QuestionUpdateRequest(BaseModel):
+    question_text: str | None = Field(default=None, min_length=1, max_length=10000)
+    answer_text: str | None = Field(default=None, min_length=1, max_length=10000)
+    mnemonic_hint: str | None = Field(default=None, max_length=5000)
+    question_type: str | None = None
+
+    @field_validator("question_type")
+    @classmethod
+    def validate_question_type(cls, v):
+        if v is not None:
+            allowed = {"recall", "cloze", "explain_back", "connection", "explain", "connect", "apply"}
+            if v not in allowed:
+                raise ValueError(f"question_type must be one of {allowed}")
+        return v
+
+
+class BulkDeleteRequest(BaseModel):
+    question_ids: list[str] = Field(..., min_length=1, max_length=50)
+
+    @field_validator("question_ids")
+    @classmethod
+    def validate_uuids(cls, v):
+        for qid in v:
+            try:
+                uuid_module.UUID(qid)
+            except ValueError:
+                raise ValueError(f"Invalid UUID: {qid}")
+        return v
+
+
+class RescheduleRequest(BaseModel):
+    action: str
+    days: int | None = Field(default=None, ge=1, le=365)
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v):
+        allowed = {"reset", "review_now", "postpone"}
+        if v not in allowed:
+            raise ValueError(f"action must be one of {allowed}")
+        return v
+
+
+class QuestionTypeCount(BaseModel):
+    question_type: str
+    count: int
+
+
+class QuestionStateCount(BaseModel):
+    state: int
+    count: int
+
+
+class FailedQuestion(BaseModel):
+    id: str
+    question_text: str
+    accuracy_rate: float
+
+
+class QuestionStatsSummary(BaseModel):
+    total_questions: int
+    by_type: list[QuestionTypeCount]
+    by_state: list[QuestionStateCount]
+    avg_difficulty: float | None
+    avg_stability: float | None
+    most_failed: list[FailedQuestion]

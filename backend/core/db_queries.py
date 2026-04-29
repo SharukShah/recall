@@ -346,10 +346,22 @@ async def get_capture_detail(pool: asyncpg.Pool, capture_id: str) -> dict | None
             uid,
         )
 
+        tags = await conn.fetch(
+            """
+            SELECT t.name
+            FROM tags t
+            JOIN capture_tags ct ON ct.tag_id = t.id
+            WHERE ct.capture_id = $1
+            ORDER BY t.name
+            """,
+            uid,
+        )
+
     return {
         "capture": dict(capture),
         "facts": [dict(f) for f in facts],
         "questions": [dict(q) for q in questions],
+        "tags": [r["name"] for r in tags],
     }
 
 
@@ -406,3 +418,368 @@ async def search_similar_points(
             min_similarity,
         )
         return [dict(row) for row in rows]
+
+
+# ============================================================
+# QUESTION MANAGEMENT QUERIES
+# ============================================================
+
+_ALLOWED_SORT_FIELDS = {"created_at", "due", "stability", "difficulty"}
+_ALLOWED_ORDERS = {"asc", "desc"}
+
+
+def _build_question_filters(
+    search: str | None,
+    question_type: str | None,
+    state: int | None,
+    capture_id: str | None,
+    tag: str | None,
+) -> tuple[str, list]:
+    """Build WHERE clause and params for question list/count queries."""
+    conditions = []
+    params: list = []
+    idx = 1
+
+    if search:
+        conditions.append(f"(q.question_text ILIKE ${idx} OR q.answer_text ILIKE ${idx})")
+        params.append(f"%{search}%")
+        idx += 1
+
+    if question_type:
+        conditions.append(f"q.question_type = ${idx}")
+        params.append(question_type)
+        idx += 1
+
+    if state is not None:
+        conditions.append(f"q.state = ${idx}")
+        params.append(state)
+        idx += 1
+
+    if capture_id:
+        conditions.append(f"ep.capture_id = ${idx}")
+        params.append(uuid.UUID(capture_id))
+        idx += 1
+
+    if tag:
+        conditions.append(f"""EXISTS (
+            SELECT 1 FROM capture_tags ct
+            JOIN tags t ON t.id = ct.tag_id
+            WHERE ct.capture_id = ep.capture_id AND t.name = ${idx}
+        )""")
+        params.append(tag)
+        idx += 1
+
+    where = " AND ".join(conditions) if conditions else "TRUE"
+    return where, params
+
+
+async def list_questions(
+    pool: asyncpg.Pool,
+    limit: int = 20,
+    offset: int = 0,
+    search: str | None = None,
+    question_type: str | None = None,
+    state: int | None = None,
+    sort: str = "created_at",
+    order: str = "desc",
+    capture_id: str | None = None,
+    tag: str | None = None,
+) -> list[dict]:
+    """List questions with filtering, sorting, and pagination."""
+    sort_field = sort if sort in _ALLOWED_SORT_FIELDS else "created_at"
+    sort_order = order.upper() if order.lower() in _ALLOWED_ORDERS else "DESC"
+
+    where, params = _build_question_filters(search, question_type, state, capture_id, tag)
+    next_idx = len(params) + 1
+
+    sql = f"""
+        SELECT q.id, q.question_text, q.answer_text, q.question_type,
+               q.technique_used, q.mnemonic_hint,
+               q.state, q.due, q.stability, q.difficulty, q.last_review, q.created_at,
+               ep.capture_id,
+               LEFT(c.raw_text, 100) AS source_text,
+               COALESCE(rl_agg.review_count, 0) AS review_count,
+               rl_agg.last_rating
+        FROM questions q
+        JOIN extracted_points ep ON q.extracted_point_id = ep.id
+        JOIN captures c ON ep.capture_id = c.id
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS review_count,
+                   (SELECT rating FROM review_logs
+                    WHERE question_id = q.id
+                    ORDER BY reviewed_at DESC LIMIT 1) AS last_rating
+            FROM review_logs WHERE question_id = q.id
+        ) rl_agg ON TRUE
+        WHERE {where}
+        ORDER BY q.{sort_field} {sort_order}
+        LIMIT ${next_idx} OFFSET ${next_idx + 1}
+    """
+    params.extend([limit, offset])
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, *params)
+    return [dict(r) for r in rows]
+
+
+async def count_questions(
+    pool: asyncpg.Pool,
+    search: str | None = None,
+    question_type: str | None = None,
+    state: int | None = None,
+    capture_id: str | None = None,
+    tag: str | None = None,
+) -> int:
+    """Count questions matching filters."""
+    where, params = _build_question_filters(search, question_type, state, capture_id, tag)
+
+    sql = f"""
+        SELECT COUNT(*)
+        FROM questions q
+        JOIN extracted_points ep ON q.extracted_point_id = ep.id
+        WHERE {where}
+    """
+
+    async with pool.acquire() as conn:
+        return await conn.fetchval(sql, *params)
+
+
+async def get_question_detail(pool: asyncpg.Pool, question_id: str) -> dict | None:
+    """Get a single question with full stats, review logs, and capture info."""
+    uid = uuid.UUID(question_id)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT q.id, q.question_text, q.answer_text, q.question_type,
+                   q.technique_used, q.mnemonic_hint,
+                   q.state, q.due, q.stability, q.difficulty, q.last_review, q.created_at,
+                   ep.capture_id, ep.content AS extracted_point_content,
+                   c.raw_text AS capture_raw_text,
+                   LEFT(c.raw_text, 100) AS source_text
+            FROM questions q
+            JOIN extracted_points ep ON q.extracted_point_id = ep.id
+            JOIN captures c ON ep.capture_id = c.id
+            WHERE q.id = $1
+            """,
+            uid,
+        )
+        if not row:
+            return None
+
+        logs = await conn.fetch(
+            """
+            SELECT rating, user_answer, ai_feedback, reviewed_at
+            FROM review_logs
+            WHERE question_id = $1
+            ORDER BY reviewed_at DESC
+            """,
+            uid,
+        )
+
+        review_count = len(logs)
+        last_rating = logs[0]["rating"] if logs else None
+        total_reviews = len(logs)
+        good_reviews = sum(1 for l in logs if l["rating"] >= 3)
+        accuracy_rate = round(good_reviews * 100.0 / total_reviews, 1) if total_reviews > 0 else None
+
+    result = dict(row)
+    result["review_logs"] = [dict(l) for l in logs]
+    result["review_count"] = review_count
+    result["last_rating"] = last_rating
+    result["accuracy_rate"] = accuracy_rate
+    return result
+
+
+async def update_question_fields(
+    pool: asyncpg.Pool,
+    question_id: str,
+    updates: dict,
+) -> dict | None:
+    """Partially update a question's editable fields. Returns updated row."""
+    allowed = {"question_text", "answer_text", "mnemonic_hint", "question_type"}
+    filtered = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    if not filtered:
+        return await get_question_by_id(pool, question_id)
+
+    set_parts = []
+    params = [uuid.UUID(question_id)]
+    for i, (col, val) in enumerate(filtered.items(), start=2):
+        set_parts.append(f"{col} = ${i}")
+        params.append(val)
+
+    sql = f"""
+        UPDATE questions SET {', '.join(set_parts)}
+        WHERE id = $1
+        RETURNING id, question_text, answer_text, question_type,
+                  technique_used, mnemonic_hint,
+                  due, stability, difficulty, step, state, last_review, created_at
+    """
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(sql, *params)
+    return dict(row) if row else None
+
+
+async def delete_question(pool: asyncpg.Pool, question_id: str) -> bool:
+    """Delete a single question. Returns True if deleted."""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM questions WHERE id = $1",
+            uuid.UUID(question_id),
+        )
+    return result == "DELETE 1"
+
+
+async def bulk_delete_questions(pool: asyncpg.Pool, question_ids: list[str]) -> int:
+    """Delete multiple questions. Returns count of deleted rows."""
+    uuids = [uuid.UUID(qid) for qid in question_ids]
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM questions WHERE id = ANY($1::uuid[])",
+            uuids,
+        )
+    # result looks like "DELETE N"
+    return int(result.split(" ")[1])
+
+
+async def reschedule_question(
+    pool: asyncpg.Pool,
+    question_id: str,
+    due: datetime,
+    state: int | None = None,
+    step: int | None = None,
+) -> dict | None:
+    """Update FSRS scheduling fields for manual reschedule. Returns updated row."""
+    uid = uuid.UUID(question_id)
+    async with pool.acquire() as conn:
+        if state is not None and step is not None:
+            row = await conn.fetchrow(
+                """
+                UPDATE questions SET due = $2, state = $3, step = $4
+                WHERE id = $1
+                RETURNING id, question_text, answer_text, question_type,
+                          technique_used, mnemonic_hint,
+                          due, stability, difficulty, step, state, last_review, created_at
+                """,
+                uid, due, state, step,
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                UPDATE questions SET due = $2
+                WHERE id = $1
+                RETURNING id, question_text, answer_text, question_type,
+                          technique_used, mnemonic_hint,
+                          due, stability, difficulty, step, state, last_review, created_at
+                """,
+                uid, due,
+            )
+    return dict(row) if row else None
+
+
+async def get_question_stats_summary(pool: asyncpg.Pool) -> dict:
+    """Get question bank overview stats."""
+    async with pool.acquire() as conn:
+        total = await conn.fetchval("SELECT COUNT(*) FROM questions")
+
+        by_type = await conn.fetch(
+            "SELECT question_type, COUNT(*) AS count FROM questions GROUP BY question_type"
+        )
+
+        by_state = await conn.fetch(
+            "SELECT state, COUNT(*) AS count FROM questions GROUP BY state"
+        )
+
+        avgs = await conn.fetchrow(
+            "SELECT AVG(difficulty) AS avg_difficulty, AVG(stability) AS avg_stability FROM questions"
+        )
+
+        most_failed = await conn.fetch(
+            """
+            SELECT q.id, q.question_text,
+                   ROUND(COUNT(*) FILTER (WHERE rl.rating >= 3) * 100.0 / NULLIF(COUNT(*), 0), 1) AS accuracy_rate
+            FROM questions q
+            JOIN review_logs rl ON rl.question_id = q.id
+            GROUP BY q.id, q.question_text
+            HAVING COUNT(*) >= 2
+            ORDER BY accuracy_rate ASC
+            LIMIT 5
+            """
+        )
+
+    return {
+        "total_questions": total or 0,
+        "by_type": [dict(r) for r in by_type],
+        "by_state": [dict(r) for r in by_state],
+        "avg_difficulty": float(avgs["avg_difficulty"]) if avgs["avg_difficulty"] is not None else None,
+        "avg_stability": float(avgs["avg_stability"]) if avgs["avg_stability"] is not None else None,
+        "most_failed": [dict(r) for r in most_failed],
+    }
+
+
+# ============================================================
+# TAG QUERIES
+# ============================================================
+
+async def list_all_tags(pool: asyncpg.Pool) -> list[dict]:
+    """List all tags with usage counts."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT t.id, t.name, COUNT(ct.capture_id) AS count
+            FROM tags t
+            LEFT JOIN capture_tags ct ON ct.tag_id = t.id
+            GROUP BY t.id, t.name
+            ORDER BY count DESC, t.name ASC
+            """
+        )
+    return [{"id": str(r["id"]), "name": r["name"], "count": r["count"]} for r in rows]
+
+
+async def set_capture_tags(
+    pool_or_conn: PoolOrConn,
+    capture_id: str,
+    tag_names: list[str],
+) -> list[str]:
+    """
+    Set tags for a capture (replaces existing).
+    Creates new tags if they don't exist.
+    Returns the final list of tag names.
+    """
+    async with await _acquire(pool_or_conn) as conn:
+        uid = uuid.UUID(capture_id)
+
+        # Remove existing tags for this capture
+        await conn.execute(
+            "DELETE FROM capture_tags WHERE capture_id = $1", uid
+        )
+
+        if not tag_names:
+            return []
+
+        result_tags = []
+        for name in tag_names:
+            name = name.strip()
+            if not name:
+                continue
+            # Upsert the tag
+            tag_id = await conn.fetchval(
+                """
+                INSERT INTO tags (id, name)
+                VALUES ($1, $2)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """,
+                uuid.uuid4(), name,
+            )
+            # Link to capture
+            await conn.execute(
+                """
+                INSERT INTO capture_tags (capture_id, tag_id)
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                """,
+                uid, tag_id,
+            )
+            result_tags.append(name)
+
+        return result_tags

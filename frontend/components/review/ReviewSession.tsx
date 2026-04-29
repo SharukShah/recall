@@ -11,6 +11,7 @@ import { RatingButtons } from "./RatingButtons";
 import { SessionSummary } from "./SessionSummary";
 import { EmptyReviewState } from "./EmptyReviewState";
 import { VoiceControls } from "./VoiceControls";
+import { UpcomingQuestions } from "./UpcomingQuestions";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { ErrorState } from "@/components/shared/ErrorState";
 
@@ -157,6 +158,10 @@ export function ReviewSession() {
             isRecording={voice.isRecording}
           />
         </div>
+      )}
+
+      {(state.phase === "question" || state.phase === "evaluating" || state.phase === "feedback" || state.phase === "rating") && (
+        <UpcomingQuestions questions={state.questions} currentIndex={state.currentIndex} />
       )}
 
       {(state.phase === "feedback" || state.phase === "rating") && state.evaluation && (

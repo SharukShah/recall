@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Plus, Brain, Clock, Search, GraduationCap, Sunset, Mic, Settings, Castle, Activity, Network } from "lucide-react";
+import { LayoutDashboard, Plus, Brain, Clock, Search, GraduationCap, Sunset, Mic, Settings, Castle, Activity, Network, ListChecks } from "lucide-react";
 import { NavLink } from "./NavLink";
 
 interface DesktopSidebarProps {
@@ -22,6 +22,7 @@ export function DesktopSidebar({ dueCount }: DesktopSidebarProps) {
         <NavLink href="/" icon={LayoutDashboard} label="Dashboard" />
         <NavLink href="/capture" icon={Plus} label="Capture" />
         <NavLink href="/review" icon={Brain} label="Review" badge={dueCount} />
+        <NavLink href="/questions" icon={ListChecks} label="Questions" />
 
         <p className="px-3 py-2 mt-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Learn</p>
         <NavLink href="/teach" icon={GraduationCap} label="Teach Me" />

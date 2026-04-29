@@ -1,8 +1,8 @@
 # Project State: ReCall — Voice-First Personal Memory Assistant
 
-> Last Updated: 2026-04-19 (Knowledge Graph rate limit increased — all UI pages working)
-> Current Phase: ✅ DEPLOYMENT READY — All phases complete, all tests passing
-> Next Agent: Ready for production deployment
+> Last Updated: 2026-04-29 (Question Bank + Upcoming Preview features added)
+> Current Phase: Implementation — New features added
+> Next Agent: Testing - Critic (validate new question management endpoints)
 
 ## Pipeline Status
 
@@ -15,10 +15,10 @@
 | 5 | Decision Logic | Orchestrator Logic Agent | Completed | docs/orchestrator-logic.md | Complete decision trees for all flows: capture, review (3 endpoints), query, voice orchestrator, frontend state machines. Edge cases and error handling covered. |
 | 6 | UI/UX | UI/UX Agent | Completed | docs/ui-ux-design.md | 10-section UX spec: page inventory, component hierarchy, wireframes, interaction patterns, state machines, responsive design, navigation, API map, accessibility, design tokens. |
 | 7 | MVP Planning | MVP Planner Agent | Completed (Inline) | docs/product-plan.md (Section 6-7) | MVP features defined in product plan (10 MVP features, 14 post-MVP). Execution plan has 5 phases. No separate MVP doc. |
-| 8 | Implementation | Coding Agent | Completed (Backend + Frontend) | backend/ (20+ files), frontend/ (50+ files) | Backend: 7 endpoints, tested & hardened. Frontend: Next.js 14, 5 pages, 30+ components, all API integrations, review state machine. Builds clean. |
-| 9 | Audit | Traceability Auditor | Completed | docs/audit-report.md | Initial: 92% → fixed 3 gaps → re-audit: 100%. Then re-verified 8/8 security fixes after iteration 2. |
-| 10 | Testing | Testing - Critic | Completed | docs/test-report.md | Backend: 9/10. Frontend: 7/10 → fixed 4 Medium issues → estimated 9/10. Iteration loop exited for both. |
-| 11 | Iteration | Iteration Agent | Completed (2 cycles) | 12+ files changed | Cycle 1: Fixed 3 audit gaps. Cycle 2: Fixed 8 of 11 security findings (all High + Medium). 3 Low/Info deferred. |
+| 8 | Implementation | Coding Agent | Completed (Backend + Frontend) | backend/ (20+ files), frontend/ (72 components) | 11 routers, 10 services, 15 pages, 72 components. Tags, Export, Dark Mode added Apr 20. All 22/24 features confirmed. |
+| 9 | Audit | Traceability Auditor | Completed (Apr 25) | docs/audit-report.md | 87% completeness. 4 gaps: missing LLM functions, schema fragmentation, URL ingestion unwired, no login page. |
+| 10 | Testing | Testing - Critic | Completed (Apr 25) | docs/test-report.md | Score 5/10. 3 Critical (route shadowing, missing LLM fns, no auth), 6 High (CSV injection, N+1 queries, tag txn, streak bug, tag validation, prefix collision). |
+| 11 | Iteration | Iteration Agent | Completed (Apr 25) | 8 files changed | Fixed all 3 Critical + 6 High: route reorder, 4 LLM fns, CSV sanitize, bulk export query, tag txn, streak fix, tag validation, graph prefix. Backend imports OK, frontend builds clean. |
 
 ## Key Decisions Made
 

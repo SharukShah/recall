@@ -10,15 +10,15 @@ class _RateLimiter:
     def __init__(self):
         # {(ip, path): [timestamp, ...]}
         self._requests: dict[tuple, list[float]] = defaultdict(list)
-        self._last_cleanup = time.time()
+        self._last_cleanup = time.monotonic()
 
     def _clean(self, key: tuple, window: int):
-        cutoff = time.time() - window
+        cutoff = time.monotonic() - window
         self._requests[key] = [t for t in self._requests[key] if t > cutoff]
 
     def _periodic_cleanup(self, window: int):
         """Remove empty keys every 5 minutes to prevent memory growth."""
-        now = time.time()
+        now = time.monotonic()
         if now - self._last_cleanup < 300:
             return
         self._last_cleanup = now
@@ -37,7 +37,7 @@ class _RateLimiter:
         self._periodic_cleanup(window)
         if len(self._requests[key]) >= max_requests:
             raise HTTPException(status_code=429, detail="Rate limit exceeded")
-        self._requests[key].append(time.time())
+        self._requests[key].append(time.monotonic())
 
 
 _limiter = _RateLimiter()

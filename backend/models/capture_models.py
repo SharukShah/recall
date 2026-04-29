@@ -1,15 +1,34 @@
 """Pydantic models for capture endpoints and LLM structured outputs."""
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Literal
 from models.common import ContentType, QuestionType, TechniqueType
+
+_TAG_PATTERN = re.compile(r'^[a-zA-Z0-9\-_ ]+$')
 
 
 # --- API Request/Response ---
 
 class CaptureRequest(BaseModel):
     raw_text: str = Field(..., min_length=1, max_length=50000)
-    source_type: Literal["text", "voice", "url"] = "text"
+    source_type: Literal["text", "voice", "url", "reflection"] = "text"
     why_it_matters: str | None = Field(default=None, max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def validate_tags(cls, v):
+        validated = []
+        for tag in v:
+            tag = tag.strip()
+            if not tag:
+                continue
+            if len(tag) > 50:
+                raise ValueError(f"Tag '{tag[:20]}...' exceeds 50 characters")
+            if not _TAG_PATTERN.match(tag):
+                raise ValueError(f"Tag '{tag}' contains invalid characters. Only alphanumeric, hyphens, underscores, and spaces are allowed.")
+            validated.append(tag)
+        return validated
 
 
 class CaptureResponse(BaseModel):
@@ -26,6 +45,7 @@ class CaptureListItem(BaseModel):
     raw_text: str
     source_type: str
     facts_count: int
+    tags: list[str] = []
     created_at: str
 
 
@@ -34,6 +54,7 @@ class CaptureDetail(BaseModel):
     raw_text: str
     source_type: str
     why_it_matters: str | None
+    tags: list[str] = []
     created_at: str
     facts: list["FactItem"]
     questions: list["QuestionItem"]

@@ -43,122 +43,119 @@ class StatsService:
                     learning=mastery_row["learning"],
                     review=mastery_row["review"],
                     relearning=mastery_row["relearning"],
+                )
+
+                # Learning velocity
+                now = datetime.now(timezone.utc)
+                week_ago = now - timedelta(days=7)
+                two_weeks_ago = now - timedelta(days=14)
+
+                velocity_query = """
+                    SELECT
+                        (SELECT COUNT(*) FROM captures WHERE created_at >= $1) as captures_this_week,
+                        (SELECT COUNT(*) FROM captures WHERE created_at >= $2 AND created_at < $1) as captures_last_week,
+                        (SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $1) as reviews_this_week,
+                        (SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $2 AND reviewed_at < $1) as reviews_last_week,
+                        (SELECT COUNT(*) FROM questions WHERE created_at >= $1) as questions_this_week
+                """
+                velocity_row = await conn.fetchrow(velocity_query, week_ago, two_weeks_ago)
+                velocity = LearningVelocity(
+                    captures_this_week=velocity_row["captures_this_week"],
+                    captures_last_week=velocity_row["captures_last_week"],
+                    reviews_this_week=velocity_row["reviews_this_week"],
+                    reviews_last_week=velocity_row["reviews_last_week"],
+                    questions_generated_this_week=velocity_row["questions_this_week"],
+                )
+
+                # Review consistency
+                thirty_days_ago = now - timedelta(days=30)
+
+                # Current streak: consecutive days ending today
+                streak_query = """
+                    WITH review_dates AS (
+                        SELECT DISTINCT reviewed_at::date AS d FROM review_logs
+                    ),
+                    streak AS (
+                        SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d DESC))::int AS grp
+                        FROM review_dates
+                        WHERE d <= CURRENT_DATE
                     )
+                    SELECT COUNT(*) FROM streak
+                    WHERE grp = (
+                        SELECT grp FROM streak WHERE d = CURRENT_DATE
+                        LIMIT 1
+                    )
+                """
+                current_streak = await conn.fetchval(streak_query) or 0
 
-            # Learning velocity
-            now = datetime.now(timezone.utc)
-            week_ago = now - timedelta(days=7)
-            two_weeks_ago = now - timedelta(days=14)
+                # Longest streak
+                longest_streak_query = """
+                    WITH review_dates AS (
+                        SELECT DISTINCT reviewed_at::date as review_date
+                        FROM review_logs
+                        ORDER BY review_date
+                    ),
+                    streak_groups AS (
+                        SELECT 
+                            review_date,
+                            review_date - (ROW_NUMBER() OVER (ORDER BY review_date))::int * INTERVAL '1 day' as grp
+                        FROM review_dates
+                    ),
+                    streak_lengths AS (
+                        SELECT COUNT(*) as streak_length
+                        FROM streak_groups
+                        GROUP BY grp
+                    )
+                    SELECT COALESCE(MAX(streak_length), 0) as longest
+                    FROM streak_lengths
+                """
+                longest_streak = await conn.fetchval(longest_streak_query) or 0
 
-            velocity_query = """
-                SELECT
-                    (SELECT COUNT(*) FROM captures WHERE created_at >= $1) as captures_this_week,
-                    (SELECT COUNT(*) FROM captures WHERE created_at >= $2 AND created_at < $1) as captures_last_week,
-                    (SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $1) as reviews_this_week,
-                    (SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $2 AND reviewed_at < $1) as reviews_last_week,
-                    (SELECT COUNT(*) FROM questions WHERE created_at >= $1) as questions_this_week
-            """
-            velocity_row = await conn.fetchrow(velocity_query, week_ago, two_weeks_ago)
-            velocity = LearningVelocity(
-                captures_this_week=velocity_row["captures_this_week"],
-                captures_last_week=velocity_row["captures_last_week"],
-                reviews_this_week=velocity_row["reviews_this_week"],
-                reviews_last_week=velocity_row["reviews_last_week"],
-                questions_generated_this_week=velocity_row["questions_this_week"],
-            )
-
-            # Review consistency
-            thirty_days_ago = now - timedelta(days=30)
-            
-            # Current streak (reuse existing logic)
-            streak_query = """
-                WITH review_dates AS (
-                    SELECT DISTINCT reviewed_at::date as review_date
+                # Review days last 30
+                review_days_query = """
+                    SELECT COUNT(DISTINCT reviewed_at::date)
                     FROM review_logs
-                    ORDER BY review_date DESC
-                ),
-                date_diffs AS (
-                    SELECT 
-                        review_date,
-                        LAG(review_date) OVER (ORDER BY review_date DESC) as prev_date
-                    FROM review_dates
-                )
-                SELECT 
-                    COUNT(*) as streak
-                FROM date_diffs
-                WHERE prev_date IS NULL 
-                    OR review_date = prev_date - INTERVAL '1 day'
-            """
-            current_streak = await conn.fetchval(streak_query) or 0
+                    WHERE reviewed_at >= $1
+                """
+                review_days_last_30 = await conn.fetchval(review_days_query, thirty_days_ago) or 0
 
-            # Longest streak
-            longest_streak_query = """
-                WITH review_dates AS (
-                    SELECT DISTINCT reviewed_at::date as review_date
+                # Avg reviews per day
+                total_reviews_last_30 = await conn.fetchval(
+                    "SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $1", thirty_days_ago
+                ) or 0
+                avg_reviews_per_day = total_reviews_last_30 / 30.0
+
+                consistency = ReviewConsistency(
+                    current_streak=current_streak,
+                    longest_streak=longest_streak,
+                    review_days_last_30=review_days_last_30,
+                    avg_reviews_per_day=avg_reviews_per_day,
+                )
+
+                # Summary
+                summary_query = """
+                    SELECT
+                        COUNT(*) as total_reviews,
+                        AVG(rating) as avg_score
                     FROM review_logs
-                    ORDER BY review_date
-                ),
-                streak_groups AS (
-                    SELECT 
-                        review_date,
-                        review_date - (ROW_NUMBER() OVER (ORDER BY review_date))::int * INTERVAL '1 day' as grp
-                    FROM review_dates
-                ),
-                streak_lengths AS (
-                    SELECT COUNT(*) as streak_length
-                    FROM streak_groups
-                    GROUP BY grp
+                """
+                summary_row = await conn.fetchrow(summary_query)
+                total_reviews = summary_row["total_reviews"] or 0
+                avg_score = float(summary_row["avg_score"]) if summary_row["avg_score"] else None
+                estimate_minutes = int(total_reviews * 0.5)  # ~30 seconds per review
+
+                summary = AnalyticsSummary(
+                    total_reviews_all_time=total_reviews,
+                    avg_score=avg_score,
+                    total_time_studying_estimate_minutes=estimate_minutes,
                 )
-                SELECT COALESCE(MAX(streak_length), 0) as longest
-                FROM streak_lengths
-            """
-            longest_streak = await conn.fetchval(longest_streak_query) or 0
 
-            # Review days last 30
-            review_days_query = """
-                SELECT COUNT(DISTINCT reviewed_at::date)
-                FROM review_logs
-                WHERE reviewed_at >= $1
-            """
-            review_days_last_30 = await conn.fetchval(review_days_query, thirty_days_ago) or 0
-
-            # Avg reviews per day
-            total_reviews_last_30 = await conn.fetchval(
-                "SELECT COUNT(*) FROM review_logs WHERE reviewed_at >= $1", thirty_days_ago
-            ) or 0
-            avg_reviews_per_day = total_reviews_last_30 / 30.0
-
-            consistency = ReviewConsistency(
-                current_streak=current_streak,
-                longest_streak=longest_streak,
-                review_days_last_30=review_days_last_30,
-                avg_reviews_per_day=avg_reviews_per_day,
-            )
-
-            # Summary
-            summary_query = """
-                SELECT
-                    COUNT(*) as total_reviews,
-                    AVG(rating) as avg_score
-                FROM review_logs
-            """
-            summary_row = await conn.fetchrow(summary_query)
-            total_reviews = summary_row["total_reviews"] or 0
-            avg_score = float(summary_row["avg_score"]) if summary_row["avg_score"] else None
-            estimate_minutes = int(total_reviews * 0.5)  # ~30 seconds per review
-
-            summary = AnalyticsSummary(
-                total_reviews_all_time=total_reviews,
-                avg_score=avg_score,
-                total_time_studying_estimate_minutes=estimate_minutes,
-            )
-
-            return AnalyticsResponse(
-                mastery_distribution=mastery,
-                learning_velocity=velocity,
-                review_consistency=consistency,
-                summary=summary,
-            )
+                return AnalyticsResponse(
+                    mastery_distribution=mastery,
+                    learning_velocity=velocity,
+                    review_consistency=consistency,
+                    summary=summary,
+                )
 
     async def get_retention_curve(self, weeks: int = 12) -> RetentionCurveResponse:
         """Get retention rate over time (weekly buckets)."""

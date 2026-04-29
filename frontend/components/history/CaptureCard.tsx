@@ -34,6 +34,22 @@ export function CaptureCard({ capture }: CaptureCardProps) {
           <span>{capture.facts_count} facts</span>
           <span>·</span>
           <span>{formatRelativeDate(capture.created_at)}</span>
+          {capture.tags?.length > 0 && (
+            <>
+              <span>·</span>
+              {capture.tags.slice(0, 3).map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-medium"
+                >
+                  {tag}
+                </span>
+              ))}
+              {capture.tags.length > 3 && (
+                <span className="text-[10px]">+{capture.tags.length - 3}</span>
+              )}
+            </>
+          )}
         </div>
       </div>
       <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />

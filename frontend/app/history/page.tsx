@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, FileText, Mic, Link as LinkIcon, SlidersHorizontal } from "lucide-react";
-import { listCaptures } from "@/lib/api";
-import type { CaptureListItem } from "@/types/api";
+import { Search, FileText, Mic, Link as LinkIcon, SlidersHorizontal, Tag } from "lucide-react";
+import { listCaptures, getAllTags } from "@/lib/api";
+import type { CaptureListItem, TagItem } from "@/types/api";
 import { CaptureCard } from "@/components/history/CaptureCard";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -30,13 +30,16 @@ export default function HistoryPage() {
   const [hasMore, setHasMore] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [allTags, setAllTags] = useState<TagItem[]>([]);
 
   const load = useCallback(async () => {
     try {
       setError(null);
       setLoading(true);
-      const data = await listCaptures(100, 0);
+      const [data, tags] = await Promise.all([listCaptures(100, 0), getAllTags()]);
       setCaptures(data);
+      setAllTags(tags);
       setHasMore(data.length === 100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load captures");
@@ -67,12 +70,15 @@ export default function HistoryPage() {
     if (sourceFilter !== "all") {
       result = result.filter((c) => c.source_type === sourceFilter);
     }
+    if (tagFilter) {
+      result = result.filter((c) => c.tags?.includes(tagFilter));
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((c) => c.raw_text.toLowerCase().includes(q));
     }
     return result;
-  }, [captures, sourceFilter, searchQuery]);
+  }, [captures, sourceFilter, tagFilter, searchQuery]);
 
   if (loading) return <LoadingSpinner message="Loading captures..." />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -113,6 +119,35 @@ export default function HistoryPage() {
             {filtered.length} capture{filtered.length !== 1 ? "s" : ""}
           </span>
         </div>
+
+        {allTags.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Tag className="h-3 w-3 text-muted-foreground" />
+            <button
+              onClick={() => setTagFilter(null)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                !tagFilter
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              All
+            </button>
+            {allTags.map((t) => (
+              <button
+                key={t.name}
+                onClick={() => setTagFilter(tagFilter === t.name ? null : t.name)}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  tagFilter === t.name
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.name} ({t.count})
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Results */}

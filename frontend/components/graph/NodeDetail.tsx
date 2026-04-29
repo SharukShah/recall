@@ -35,7 +35,7 @@ export function NodeDetail({ nodeId, onClose }: NodeDetailProps) {
       setLoading(true);
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-        const response = await fetch(`${apiUrl}/api/knowledge/graph/node/${nodeId}`);
+        const response = await fetch(`${apiUrl}/api/graph/node/${nodeId}`);
         if (!response.ok) throw new Error("Failed to fetch node detail");
         const data = await response.json();
         setDetail(data);

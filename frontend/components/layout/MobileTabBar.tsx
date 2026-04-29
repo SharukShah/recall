@@ -16,6 +16,7 @@ export function MobileTabBar({ dueCount }: MobileTabBarProps) {
   const pathname = usePathname();
 
   const moreItems = [
+    { href: "/questions", label: "Questions" },
     { href: "/teach", label: "Teach Me" },
     { href: "/voice", label: "Voice Agent" },
     { href: "/reflect", label: "Reflect" },

@@ -18,10 +18,8 @@ import asyncpg
 from config import settings
 from models.capture_models import CaptureRequest
 from models.review_models import EvaluateRequest, RateRequest
-from models.teach_models import TeachStartRequest, TeachRespondRequest
 from services.capture_service import CaptureService
 from services.review_service import ReviewService
-from services.teach_service import TeachService
 from services.knowledge_service import KnowledgeService
 
 logger = logging.getLogger(__name__)
@@ -38,53 +36,45 @@ UNIFIED_FUNCTIONS = [
     },
     {
         "name": "start_review_session",
-        "description": "Load the user's due review questions and start a quiz. Call when the user wants to be quizzed. Returns the count of due questions and the first question.",
+        "description": "Start a review quiz. Set recent_only=true to quiz ONLY on the most recent capture (use when user says 'review this', 'quiz me on what I just learned', 'review recent', or any review request after a capture). Set recent_only=false to load all due questions from spaced repetition.",
         "parameters": {
             "type": "object",
             "properties": {
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum questions to load. Default 20.",
+                    "description": "Maximum questions to load. Default 20. Only used when recent_only=false.",
+                },
+                "recent_only": {
+                    "type": "boolean",
+                    "description": "If true, quiz only on the most recently captured content. Default false.",
                 }
             },
         },
     },
     {
-        "name": "get_next_question",
-        "description": "Get the next review question. Returns done=true when all questions reviewed. Must call start_review_session first.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    {
         "name": "evaluate_answer",
-        "description": "Evaluate the user's answer to a review question. Returns score (correct/partial/incorrect), feedback, and the correct answer.",
+        "description": "MANDATORY: Call this for EVERY user answer during a review session. Do NOT evaluate answers yourself. This function scores the answer, provides feedback, schedules the next review, and returns the next question. Pass the question_id from the current question and the user's spoken answer.",
         "parameters": {
             "type": "object",
             "properties": {
-                "question_id": {"type": "string", "description": "UUID of the question"},
-                "user_answer": {"type": "string", "description": "The user's spoken answer"},
+                "question_id": {"type": "string", "description": "The question_id from the current review question (from start_review_session or the previous evaluate_answer response)"},
+                "user_answer": {"type": "string", "description": "Exactly what the user said as their answer"},
             },
             "required": ["question_id", "user_answer"],
         },
     },
     {
-        "name": "rate_question",
-        "description": "Submit difficulty rating for a review question. Map user words: 'again'/'forgot'=1, 'hard'/'struggled'=2, 'good'/'got it'=3, 'easy'/'obvious'=4. Updates spaced repetition schedule.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "question_id": {"type": "string", "description": "UUID of the question"},
-                "rating": {"type": "integer", "enum": [1, 2, 3, 4], "description": "1=Again, 2=Hard, 3=Good, 4=Easy"},
-            },
-            "required": ["question_id", "rating"],
-        },
+        "name": "next_question",
+        "description": "Get the next review question. Call this when the user says 'next', 'next question', 'continue', 'move on', or 'yes' during a review session. Also call this if you accidentally evaluated the user's answer yourself instead of calling evaluate_answer.",
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "finish_capture",
-        "description": "Process spoken content into knowledge facts and review questions. Call when the user finishes sharing something to remember -- when they say 'done', 'that's it', 'save', or reach a natural conclusion.",
+        "description": "Save knowledge from the conversation into the user's knowledge base, generating facts and review questions. When the user says 'capture it', 'save that', or 'done', summarize the KEY FACTS from your conversation and pass them as final_transcript. Do NOT ask the user to repeat what was discussed -- you have the conversation context.",
         "parameters": {
             "type": "object",
             "properties": {
-                "final_transcript": {"type": "string", "description": "Complete text of everything the user said to capture"},
+                "final_transcript": {"type": "string", "description": "A clear, factual summary of the knowledge to capture from the conversation"},
             },
             "required": ["final_transcript"],
         },
@@ -99,33 +89,6 @@ UNIFIED_FUNCTIONS = [
                 "why_it_matters": {"type": "string", "description": "User's one-sentence reflection"},
             },
             "required": ["capture_id", "why_it_matters"],
-        },
-    },
-    {
-        "name": "start_teach_session",
-        "description": "Start a teaching session on a topic. AI breaks it into chunks with recall checks. Call when user wants to learn about a specific topic.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "topic": {"type": "string", "description": "Topic to teach"},
-            },
-            "required": ["topic"],
-        },
-    },
-    {
-        "name": "get_current_teach_chunk",
-        "description": "Get the current teaching chunk to present. Returns title, content, analogy, and recall question. Call after start_teach_session or after submit_teach_answer.",
-        "parameters": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "submit_teach_answer",
-        "description": "Submit the user's answer to the current recall question in teach mode. Returns feedback, score, and whether the session is complete.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "answer": {"type": "string", "description": "User's spoken answer"},
-            },
-            "required": ["answer"],
         },
     },
     {
@@ -181,6 +144,8 @@ class UnifiedVoiceSession:
     reviewed_count: int = 0
     review_correct: int = 0
     rated_question_ids: set = field(default_factory=set)
+    review_awaiting_answer: bool = False  # True when agent asked a question, waiting for user
+    review_current_question_id: str | None = None  # Track current question for auto-eval
 
     # Teach state
     teach_session_id: str | None = None
@@ -237,43 +202,48 @@ Reflected today: {'yes' if context.get('reflected_today', False) else 'no'}
 
 ## Your Personality
 - Professional study coach who is also a friendly companion
-- Focused and efficient, but warm and encouraging
-- Like a knowledgeable study partner who genuinely cares about the user's progress
-- Give brief, genuine praise for good answers
-- Be gently encouraging on mistakes -- never condescending
-- Keep responses concise -- this is voice, not text. Aim for 1-3 sentences unless teaching.
+- Focused, efficient, warm, and encouraging
+- Keep responses concise -- this is voice, not text. Aim for 1-2 sentences unless teaching.
+- Do NOT add filler words like "Great!", "Exactly!", "Got it" before every response.
 
 ## What You Can Do
 
 ### 1. Capture Knowledge
-When the user shares information they want to remember:
-- Listen quietly while they speak. On pauses, say "Got it" or "Noted" briefly.
-- Do NOT interrupt or rephrase during their dictation.
-- When they signal they're done ("done", "that's it", "save"), call finish_capture with everything they said.
+When the user says "capture it", "save that", or "done":
+- You ALREADY HAVE the conversation context. Summarize the key facts yourself and call finish_capture.
+- Do NOT ask "What do you want to capture?" -- use what was just discussed.
 - After processing, report: "Captured [N] facts and [M] review questions."
 - Then ask: "Why does this matter to you?" and save their answer with save_why_it_matters.
-- Suggest: "Want me to quiz you on this now?"
+- Then offer: "Want me to quiz you on this?"
+
+When the user is dictating or explaining something and says something FACTUALLY WRONG:
+- Gently interrupt and correct them: "Actually, [correction]. Want me to capture the corrected version?"
+- Do NOT silently record incorrect information.
 
 ### 2. Review (Quiz)
 When the user wants to practice recall ("quiz me", "test me", "review"):
-- Call start_review_session to load due questions.
-- If no questions due, tell them and suggest alternatives.
-- For each question:
-  a. Call get_next_question and read it clearly.
-  b. Wait for their answer (don't give hints unless asked).
-  c. Call evaluate_answer with their response.
-  d. Share feedback: praise if correct, encouragement if wrong, always state the correct answer.
-  e. Share mnemonic_hint AFTER they answer, not before.
-  f. Ask: "How did you find that? Say again, hard, good, or easy."
-  g. Map to rating (again=1, hard=2, good=3, easy=4) and call rate_question.
-  h. Move to next question.
-- When done, give a summary with encouragement.
+- If the user JUST captured something → call start_review_session with recent_only=true.
+- Otherwise → call start_review_session with recent_only=false.
+
+**During review, follow this exact loop:**
+1. Read the question from the response.
+2. Wait for the user to answer.
+3. Call evaluate_answer(question_id, user_answer). Do this BEFORE saying anything.
+4. Read the feedback from evaluate_answer's response.
+5. If next_question exists, read it. If done=true, give summary.
+6. If you forgot to call evaluate_answer and already responded, call next_question to advance.
+
+**Rules:** Never judge answers yourself. Never say "correct" or "incorrect" without calling evaluate_answer first. If the user says "next" or "move on", call next_question.
 
 ### 3. Teach a Topic
 When the user wants to learn ("teach me about...", "explain...", "help me understand..."):
-- Call start_teach_session with the topic.
-- For each chunk: present content naturally, ask recall question, evaluate with submit_teach_answer.
-- When complete, mention it's saved to their knowledge base.
+- Teach them DIRECTLY from your own knowledge. Do NOT call any API function.
+- Break complex topics into digestible pieces. Explain one concept at a time.
+- Use analogies and examples to make concepts stick.
+- After explaining a concept, ask a quick recall question to check understanding.
+- If they get it wrong, re-explain differently. If right, move on.
+- When the teaching is done, offer: "Want me to capture the key points for your review?"
+- If they say yes, summarize what you taught and call finish_capture.
 
 ### 4. Search Knowledge
 When the user asks about something they previously learned ("What did I learn about...", "What do I know about..."):
@@ -283,12 +253,11 @@ When the user asks about something they previously learned ("What did I learn ab
 ### 5. General Q&A
 When the user asks a factual question NOT about their own knowledge:
 - Answer directly from your knowledge. Keep it concise.
-- After answering: "Want me to save that to your knowledge base?" If yes, call finish_capture.
+- After answering: "Want me to save that to your knowledge base?" If yes, summarize and call finish_capture.
 
 ### 6. Stats & Progress
 When user asks about progress ("How am I doing?", "What's my streak?"):
 - Call get_user_context and report numbers conversationally.
-- Make a suggestion based on stats.
 
 ### 7. Evening Reflection
 When user wants to reflect or it's evening and they haven't reflected:
@@ -296,35 +265,36 @@ When user wants to reflect or it's evening and they haven't reflected:
 - After they share, call submit_reflection.
 
 ## Greeting
-Start the conversation with a contextual greeting based on the USER CONTEXT above:
+Start with a brief contextual greeting based on USER CONTEXT:
 - If reviews are due: mention them and offer to start.
 - If it's evening and no reflection done: suggest reflection.
-- If streak milestone: celebrate it.
-- Otherwise: warm greeting and ask what they'd like to do.
-Keep the greeting to 1-2 sentences.
+- Otherwise: warm greeting, ask what they'd like to do.
+One sentence only.
 
 ## Intent Rules
-1. "Tell me about X" -> If broad topic, TEACH. If narrow fact, answer directly (Q&A).
-2. "Explain X" -> Default TEACH. If user says "briefly"/"quickly", answer directly.
-3. "What is X?" -> Q&A (quick answer). If "tell me more" follow-up, switch to TEACH.
-4. "What did I learn about X?" -> Always SEARCH (their knowledge base).
-5. Multiple intents ("Save this and quiz me") -> Handle sequentially.
-6. Off-topic -> Respond briefly, redirect: "I'm your study coach -- want to capture, review, or learn something?"
+1. "Tell me about X" / "Explain X" / "Teach me X" -> Teach directly (no API call).
+2. "What is X?" -> Quick answer. If "tell me more", teach in depth.
+3. "What did I learn about X?" -> Always SEARCH (their knowledge base).
+4. "Capture it" / "Save that" -> Summarize conversation and call finish_capture immediately.
+5. "Review" / "Quiz me" after a capture -> start_review_session with recent_only=true.
+6. "Review" / "Quiz me" with no recent capture -> start_review_session with recent_only=false.
+7. "Review what I just learned" / "Quiz me on this" -> ALWAYS recent_only=true.
+8. If the user corrects something they said ("actually it's X", "I meant X") -> Re-capture with corrected content by calling finish_capture again with the corrected facts.
+9. Multiple intents -> Handle sequentially.
+10. Off-topic -> Brief response, redirect to learning.
 
 ## Mid-Conversation Switching
-- In Capture: "Should I save what you've shared so far?" before switching.
 - In Review: Pause, handle new request, offer to resume: "Continue review? [N] questions left."
-- In Teach: Pause, handle request, offer to resume.
-- For quick questions during Review/Teach: Answer inline, then resume.
+- For quick questions during Review: Answer inline, then resume.
 
 ## Important Rules
-- NEVER give away answers before the user attempts them in review or teach.
-- Keep voice responses SHORT. 1-3 sentences for most responses.
+- NEVER give away answers before the user attempts them in review.
+- Keep voice responses SHORT. 1-2 sentences for most responses. Up to 4-5 sentences when teaching.
 - Use natural spoken language -- no bullet points or markdown.
-- Use natural number phrasing: "about fifteen" not "15".
 - If a function fails, handle gracefully -- suggest trying again.
 - If user is silent: "I'm here when you're ready."
-- Always be encouraging. Celebrate effort, not just correctness."""
+- When correcting the user, be gentle but clear about the correct information.
+- REVIEW MODE REMINDER: When a review session is active, EVERY user response is an answer. Call evaluate_answer IMMEDIATELY. If you already responded without calling it, call next_question to advance."""
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +391,10 @@ class VoiceSessionManager:
                         "type": "deepgram",
                         "model": settings.DEEPGRAM_STT_MODEL,
                         "language": "en",
-                        "keyterms": ["ReCall", "spaced repetition", "FSRS", "mnemonic"],
+                        "keyterms": ["ReCall", "spaced repetition", "FSRS", "mnemonic",
+                                      "VectorDB", "vector database", "embedding", "embeddings",
+                                      "PostgreSQL", "FastAPI", "Python", "JavaScript",
+                                      "API", "REST", "WebSocket", "LLM", "GPT", "RAG"],
                     },
                 },
                 "think": {
@@ -460,13 +433,44 @@ class VoiceSessionManager:
             logger.error(f"Function call '{function_name}' failed: {e}", exc_info=True)
             return json.dumps({"error": "Function call failed. Please try again."})
 
+    async def server_side_evaluate(
+        self,
+        session: UnifiedVoiceSession,
+        user_text: str,
+    ) -> dict | None:
+        """Auto-evaluate a user's answer server-side during review mode.
+        Called by the WebSocket handler when it detects the user is answering
+        a review question but the LLM didn't call evaluate_answer.
+        Returns the evaluation result dict, or None if not in review mode."""
+        if not session.review_awaiting_answer:
+            return None
+        if not session.review_current_question_id:
+            return None
+        if not user_text.strip():
+            return None
+
+        # Short utterances like "yes", "next", "no" are not answers
+        stripped = user_text.strip().lower()
+        skip_phrases = {"yes", "no", "yeah", "yep", "nope", "next", "next question",
+                        "continue", "move on", "skip", "ok", "okay"}
+        if stripped in skip_phrases:
+            return None
+
+        logger.info(f"Server-side auto-eval: question={session.review_current_question_id}, answer={user_text[:80]}")
+        result = await self._evaluate_answer(
+            session.review_current_question_id,
+            user_text,
+            session,
+        )
+        return result
+
     async def _dispatch(
         self,
         session: UnifiedVoiceSession,
         fn: str,
         params: dict[str, Any],
     ) -> dict:
-        """Route function calls with state-based validation (no mode whitelist)."""
+        """Route function calls with state-based validation."""
 
         if fn == "get_user_context":
             ctx = await self.get_user_context()
@@ -474,12 +478,23 @@ class VoiceSessionManager:
             return ctx
 
         elif fn == "start_review_session":
+            # Auto-detect: if there's a recent capture in this session, default to reviewing it
+            # unless the LLM explicitly passes recent_only=false
+            recent_only = params.get("recent_only")
+            if recent_only is True:
+                return await self._review_recent_capture(session)
+            if recent_only is False:
+                return await self._start_review_session(session, params.get("limit", 20))
+            # recent_only not specified — auto-decide based on session state
+            if session.last_capture_id:
+                return await self._review_recent_capture(session)
             return await self._start_review_session(session, params.get("limit", 20))
 
-        elif fn == "get_next_question":
+        elif fn in ("get_next_question", "next_question"):
+            # Escape hatch: auto-rates skipped question and advances
             if not session.review_queue:
                 return {"error": "No review session active. Call start_review_session first."}
-            return self._get_next_question(session)
+            return await self._get_next_question(session)
 
         elif fn == "evaluate_answer":
             if not session.review_queue:
@@ -487,15 +502,6 @@ class VoiceSessionManager:
             return await self._evaluate_answer(
                 params.get("question_id", ""),
                 params.get("user_answer", ""),
-                session,
-            )
-
-        elif fn == "rate_question":
-            if not session.review_queue:
-                return {"error": "No review session active."}
-            return await self._rate_question(
-                params.get("question_id", ""),
-                params.get("rating", 3),
                 session,
             )
 
@@ -510,24 +516,6 @@ class VoiceSessionManager:
             return await self._save_why_it_matters(
                 params.get("capture_id", ""),
                 params.get("why_it_matters", ""),
-            )
-
-        elif fn == "start_teach_session":
-            topic = params.get("topic", "")
-            if not topic.strip():
-                return {"error": "Topic is required."}
-            return await self._start_teach_session(session, topic)
-
-        elif fn == "get_current_teach_chunk":
-            if not session.teach_session_id:
-                return {"error": "No teach session active. Call start_teach_session first."}
-            return self._get_current_teach_chunk(session)
-
-        elif fn == "submit_teach_answer":
-            if not session.teach_session_id:
-                return {"error": "No teach session active."}
-            return await self._submit_teach_answer(
-                session, params.get("answer", "")
             )
 
         elif fn == "search_knowledge":
@@ -592,7 +580,28 @@ class VoiceSessionManager:
             return {"saved": False, "error": "Failed to save reflection"}
 
     async def _start_review_session(self, session: UnifiedVoiceSession, limit: int = 20) -> dict:
-        """Load due questions into the session review queue."""
+        """Load due questions into the session review queue.
+        If a review session is already active, return the current question instead of resetting."""
+        # Don't reset an active session — return current question
+        if session.review_queue and session.review_index < len(session.review_queue):
+            q = session.review_queue[session.review_index]
+            session.review_awaiting_answer = True
+            session.review_current_question_id = q["question_id"]
+            return {
+                "due_count": len(session.review_queue),
+                "session_already_active": True,
+                "instruction": "Review session already active. Read the question to the user. When they answer, call evaluate_answer with the question_id and their answer. Do NOT evaluate their answer yourself.",
+                "remaining": len(session.review_queue) - session.review_index,
+                "first_question": {
+                    "question_id": q["question_id"],
+                    "question_text": q["question_text"],
+                    "question_type": q["question_type"],
+                    "mnemonic_hint": q.get("mnemonic_hint"),
+                    "question_number": session.review_index + 1,
+                    "total_questions": len(session.review_queue),
+                },
+            }
+
         svc = ReviewService(self.db_pool, self.openai, self.scheduler)
         due_resp = await svc.get_due(limit=min(limit, 50))
         session.review_queue = [
@@ -611,12 +620,17 @@ class VoiceSessionManager:
 
         if not session.review_queue:
             session.active_workflow = None
+            session.review_awaiting_answer = False
+            session.review_current_question_id = None
             return {"due_count": 0, "message": "No reviews due right now!"}
 
         # Return first question automatically
         first = session.review_queue[0]
+        session.review_awaiting_answer = True
+        session.review_current_question_id = first["question_id"]
         return {
             "due_count": len(session.review_queue),
+            "instruction": "Read the question to the user. When they answer, call evaluate_answer with the question_id and their answer. Do NOT evaluate their answer yourself.",
             "first_question": {
                 "question_id": first["question_id"],
                 "question_text": first["question_text"],
@@ -627,9 +641,26 @@ class VoiceSessionManager:
             },
         }
 
-    def _get_next_question(self, session: UnifiedVoiceSession) -> dict:
+    async def _get_next_question(self, session: UnifiedVoiceSession) -> dict:
+        # Auto-rate the current question if it was skipped (LLM didn't call evaluate_answer)
+        current_idx = session.review_index
+        if current_idx < len(session.review_queue):
+            current_q = session.review_queue[current_idx]
+            qid = current_q["question_id"]
+            if qid not in session.rated_question_ids:
+                # Auto-rate with default rating 3 (Good) and advance
+                session.rated_question_ids.add(qid)
+                session.review_index += 1
+                session.reviewed_count += 1
+                session.session_reviews += 1
+                # Schedule the auto-rate in background (fire-and-forget)
+                import asyncio
+                asyncio.create_task(self._auto_rate_question(qid, 3))
+
         if session.review_index >= len(session.review_queue):
             session.active_workflow = None
+            session.review_awaiting_answer = False
+            session.review_current_question_id = None
             return {
                 "done": True,
                 "reviewed_count": session.reviewed_count,
@@ -637,8 +668,11 @@ class VoiceSessionManager:
                 "message": "All questions reviewed!",
             }
         q = session.review_queue[session.review_index]
+        session.review_awaiting_answer = True
+        session.review_current_question_id = q["question_id"]
         return {
             "done": False,
+            "instruction": "Read this question to the user. When they answer, call evaluate_answer with the question_id and their answer.",
             "question_id": q["question_id"],
             "question_text": q["question_text"],
             "question_type": q["question_type"],
@@ -648,10 +682,14 @@ class VoiceSessionManager:
         }
 
     async def _evaluate_answer(self, question_id: str, user_answer: str, session: UnifiedVoiceSession) -> dict:
+        """Evaluate, auto-rate via FSRS, advance index, and return next question."""
+        session.review_awaiting_answer = False
+        session.review_current_question_id = None
         valid_ids = {q["question_id"] for q in session.review_queue}
         if question_id not in valid_ids:
             return {"error": "Question not found in current review session"}
 
+        # 1. Evaluate the answer
         svc = ReviewService(self.db_pool, self.openai, self.scheduler)
         req = EvaluateRequest(question_id=question_id, user_answer=user_answer)
         resp = await svc.evaluate_answer(req)
@@ -659,122 +697,114 @@ class VoiceSessionManager:
         if resp.score == "correct":
             session.review_correct += 1
 
-        return {
-            "correct_answer": resp.correct_answer,
-            "score": resp.score,
-            "feedback": resp.feedback,
-            "suggested_rating": resp.suggested_rating,
-        }
+        # 2. Auto-rate using the LLM's suggested rating (maps correctness to FSRS)
+        rating = resp.suggested_rating or 3
+        rating = max(1, min(4, rating))
+        if question_id not in session.rated_question_ids:
+            try:
+                rate_req = RateRequest(question_id=question_id, rating=rating)
+                await svc.rate(rate_req)
+                session.rated_question_ids.add(question_id)
+            except Exception as e:
+                logger.warning(f"Auto-rate failed for {question_id}: {e}")
 
-    async def _rate_question(self, question_id: str, rating: int, session: UnifiedVoiceSession) -> dict:
-        if question_id in session.rated_question_ids:
-            return {"error": "Question already rated in this session"}
-
-        valid_ids = {q["question_id"] for q in session.review_queue}
-        if question_id not in valid_ids:
-            return {"error": "Question not found in current review session"}
-
-        try:
-            rating = max(1, min(4, int(rating)))
-        except (ValueError, TypeError):
-            rating = 3
-
-        svc = ReviewService(self.db_pool, self.openai, self.scheduler)
-        req = RateRequest(question_id=question_id, rating=rating)
-        resp = await svc.rate(req)
-        session.rated_question_ids.add(question_id)
+        # 3. Advance to next question
         session.review_index += 1
         session.reviewed_count += 1
         session.session_reviews += 1
-        return {
-            "next_due": resp.next_due,
-            "interval_days": resp.interval_days,
-            "state_label": resp.state_label,
+
+        # 4. Build response with feedback + next question (or done)
+        result: dict[str, Any] = {
+            "correct_answer": resp.correct_answer,
+            "score": resp.score,
+            "feedback": resp.feedback,
         }
 
-    async def _start_teach_session(self, session: UnifiedVoiceSession, topic: str) -> dict:
-        """Start a teach session and populate session state."""
-        svc = TeachService(self.db_pool, self.openai, self.scheduler)
-        req = TeachStartRequest(topic=topic)
-        resp = await svc.start(req)
+        if session.review_index >= len(session.review_queue):
+            result["done"] = True
+            result["reviewed_count"] = session.reviewed_count
+            result["correct_count"] = session.review_correct
+            session.active_workflow = None
+            session.review_awaiting_answer = False
+            session.review_current_question_id = None
+        else:
+            nq = session.review_queue[session.review_index]
+            result["done"] = False
+            result["instruction"] = "Read the feedback, then read the next question. When the user answers, call evaluate_answer again with the new question_id."
+            result["next_question"] = {
+                "question_id": nq["question_id"],
+                "question_text": nq["question_text"],
+                "question_type": nq["question_type"],
+                "mnemonic_hint": nq.get("mnemonic_hint"),
+                "question_number": session.review_index + 1,
+                "total_questions": len(session.review_queue),
+            }
+            session.review_awaiting_answer = True
+            session.review_current_question_id = nq["question_id"]
 
-        session.teach_session_id = resp.session_id
-        session.teach_topic = topic
-        session.teach_total_chunks = resp.total_chunks
-        session.teach_chunk_index = resp.current_chunk
-        session.teach_current_chunk = {
-            "chunk_title": resp.chunk_title,
-            "chunk_content": resp.chunk_content,
-            "chunk_analogy": resp.chunk_analogy,
-            "recall_question": resp.recall_question,
-        }
-        session.active_workflow = "teach"
-        session.session_teaches += 1
+        return result
 
+    async def _auto_rate_question(self, question_id: str, rating: int) -> None:
+        """Fire-and-forget: rate a skipped question with a default rating."""
+        try:
+            svc = ReviewService(self.db_pool, self.openai, self.scheduler)
+            req = RateRequest(question_id=question_id, rating=rating)
+            await svc.rate(req)
+        except Exception as e:
+            logger.warning(f"Background auto-rate failed for {question_id}: {e}")
+
+    async def _review_recent_capture(self, session: UnifiedVoiceSession) -> dict:
+        """Load review questions only from the most recent capture."""
+        if not session.last_capture_id:
+            return {"error": "No recent capture. Capture something first, then ask to be quizzed on it."}
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT q.id, q.question_text, q.question_type, q.mnemonic_hint, q.technique_used
+                       FROM questions q
+                       JOIN extracted_points ep ON q.extracted_point_id = ep.id
+                       WHERE ep.capture_id = $1
+                       ORDER BY q.created_at""",
+                    uuid.UUID(session.last_capture_id),
+                )
+        except Exception as e:
+            logger.error(f"Failed to load recent capture questions: {e}")
+            return {"error": "Failed to load questions for recent capture."}
+
+        if not rows:
+            return {"due_count": 0, "message": "No questions were generated for that capture."}
+
+        session.review_queue = [
+            {
+                "question_id": str(r["id"]),
+                "question_text": r["question_text"],
+                "question_type": r["question_type"],
+                "mnemonic_hint": r["mnemonic_hint"],
+                "technique_used": r["technique_used"],
+            }
+            for r in rows
+        ]
+        session.review_index = 0
+        session.rated_question_ids = set()
+        session.active_workflow = "review"
+
+        first = session.review_queue[0]
+        session.review_awaiting_answer = True
+        session.review_current_question_id = first["question_id"]
         return {
-            "topic": resp.topic,
-            "total_chunks": resp.total_chunks,
-            "first_chunk": {
-                "chunk_index": 0,
-                "chunk_title": resp.chunk_title,
-                "chunk_content": resp.chunk_content,
-                "chunk_analogy": resp.chunk_analogy,
-                "recall_question": resp.recall_question,
+            "due_count": len(session.review_queue),
+            "source": "recent_capture",
+            "instruction": "Read the question to the user. When they answer, call evaluate_answer with the question_id and their answer. Do NOT evaluate their answer yourself.",
+            "first_question": {
+                "question_id": first["question_id"],
+                "question_text": first["question_text"],
+                "question_type": first["question_type"],
+                "mnemonic_hint": first.get("mnemonic_hint"),
+                "question_number": 1,
+                "total_questions": len(session.review_queue),
             },
         }
-
-    def _get_current_teach_chunk(self, session: UnifiedVoiceSession) -> dict:
-        if session.teach_current_chunk is None:
-            return {"error": "No teach session active"}
-        c = session.teach_current_chunk
-        return {
-            "chunk_index": session.teach_chunk_index,
-            "total_chunks": session.teach_total_chunks,
-            "chunk_title": c.get("chunk_title", c.get("title", "")),
-            "chunk_content": c.get("chunk_content", c.get("content", "")),
-            "chunk_analogy": c.get("chunk_analogy", c.get("analogy")),
-            "recall_question": c.get("recall_question", ""),
-        }
-
-    async def _submit_teach_answer(self, session: UnifiedVoiceSession, answer: str) -> dict:
-        if not session.teach_session_id:
-            return {"error": "No teach session active"}
-        svc = TeachService(self.db_pool, self.openai, self.scheduler)
-        req = TeachRespondRequest(
-            session_id=uuid.UUID(session.teach_session_id),
-            answer=answer,
-        )
-        resp = await svc.respond(req)
-
-        if resp.is_complete:
-            session.teach_current_chunk = None
-            session.active_workflow = None
-            return {
-                "feedback": resp.feedback,
-                "score": resp.score,
-                "is_complete": True,
-                "summary": resp.summary,
-                "capture_id": resp.capture_id,
-            }
-        else:
-            session.teach_chunk_index = resp.current_chunk or 0
-            session.teach_current_chunk = {
-                "chunk_title": resp.chunk_title,
-                "chunk_content": resp.chunk_content,
-                "chunk_analogy": resp.chunk_analogy,
-                "recall_question": resp.recall_question,
-            }
-            return {
-                "feedback": resp.feedback,
-                "score": resp.score,
-                "is_complete": False,
-                "chunk_index": resp.current_chunk,
-                "total_chunks": session.teach_total_chunks,
-                "chunk_title": resp.chunk_title,
-                "chunk_content": resp.chunk_content,
-                "chunk_analogy": resp.chunk_analogy,
-                "recall_question": resp.recall_question,
-            }
 
     async def _submit_reflection(self, session: UnifiedVoiceSession, content: str) -> dict:
         """Submit an evening reflection through the capture pipeline."""

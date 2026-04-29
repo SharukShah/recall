@@ -63,7 +63,7 @@ async def _release_session(ip: str) -> None:
 _TRANSCRIPT_BUFFER_MAX = 100_000  # 100KB cap
 
 
-@router.websocket("/ws/voice")
+@router.websocket("/voice")
 async def voice_agent_websocket(
     websocket: WebSocket,
     session_id: str = Query(default=""),
@@ -297,6 +297,59 @@ async def _run_voice_session(
                             if role == "user":
                                 if len(session.transcript_buffer) < _TRANSCRIPT_BUFFER_MAX:
                                     session.transcript_buffer += " " + content
+
+                                # Server-side auto-evaluation during review mode
+                                # If the LLM didn't call evaluate_answer, we do it here
+                                # Wait briefly to give the LLM a chance to call evaluate_answer first
+                                if session.review_awaiting_answer and content.strip():
+                                    async def _delayed_auto_eval(text: str):
+                                        """Wait, then auto-eval if LLM hasn't called evaluate_answer."""
+                                        await asyncio.sleep(3.0)  # Give LLM 3 seconds to call evaluate_answer
+                                        if not session.review_awaiting_answer:
+                                            return  # LLM called evaluate_answer — skip
+                                        try:
+                                            eval_result = await manager.server_side_evaluate(session, text)
+                                            if eval_result:
+                                                score = eval_result.get("score", "")
+                                                feedback = eval_result.get("feedback", "")
+                                                correct_answer = eval_result.get("correct_answer", "")
+
+                                                if score == "correct":
+                                                    msg_parts = [feedback or "Correct!"]
+                                                else:
+                                                    msg_parts = [feedback or "Not quite."]
+                                                    if correct_answer:
+                                                        msg_parts.append(f"The answer is: {correct_answer}")
+
+                                                if eval_result.get("done"):
+                                                    reviewed = eval_result.get("reviewed_count", 0)
+                                                    correct_count = eval_result.get("correct_count", 0)
+                                                    msg_parts.append(f"Review complete! You got {correct_count} out of {reviewed} correct.")
+                                                elif eval_result.get("next_question"):
+                                                    nq = eval_result["next_question"]
+                                                    msg_parts.append(f"Next question: {nq['question_text']}")
+
+                                                inject_text = " ".join(msg_parts)
+                                                inject_msg = {
+                                                    "type": "InjectAgentMessage",
+                                                    "message": inject_text,
+                                                }
+                                                await deepgram_ws.send(json.dumps(inject_msg))
+                                                logger.info(f"Auto-eval injected: score={score}, done={eval_result.get('done')}")
+
+                                                try:
+                                                    await websocket.send_json({
+                                                        "type": "function_result",
+                                                        "name": "evaluate_answer",
+                                                        "result": eval_result,
+                                                        "auto_evaluated": True,
+                                                    })
+                                                except Exception:
+                                                    pass
+                                        except Exception as e:
+                                            logger.error(f"Server-side auto-eval failed: {e}")
+
+                                    asyncio.create_task(_delayed_auto_eval(content))
 
                             try:
                                 await websocket.send_json({

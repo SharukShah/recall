@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Brain, Loader2, Type, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,8 @@ import type { CaptureResponse } from "@/types/api";
 import { CaptureResult } from "./CaptureResult";
 import { VoiceCaptureButton } from "./VoiceCaptureButton";
 import { URLCaptureTab } from "./URLCaptureTab";
+import { TagInput } from "@/components/shared/TagInput";
+import { getAllTags } from "@/lib/api";
 
 type CaptureMode = "text" | "url";
 
@@ -21,6 +23,12 @@ export function CaptureForm() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CaptureResponse | null>(null);
   const [sourceType, setSourceType] = useState<"text" | "voice">("text");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+
+  useEffect(() => {
+    getAllTags().then((all) => setTagSuggestions(all.map((t) => t.name))).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +40,13 @@ export function CaptureForm() {
         raw_text: rawText.slice(0, 50_000),
         source_type: sourceType,
         why_it_matters: whyItMatters || undefined,
+        tags: tags.length > 0 ? tags : undefined,
       });
       setResult(response);
       setRawText("");
       setWhyItMatters("");
       setSourceType("text");
+      setTags([]);
       if (response.status === "complete") {
         toast({ title: "Knowledge captured!", variant: "success" });
       }
@@ -140,6 +150,20 @@ export function CaptureForm() {
               placeholder="e.g., Needed for the project I'm building"
               disabled={submitting}
               aria-label="Why does this matter to you? Optional."
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Tags{" "}
+              <span className="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <TagInput
+              tags={tags}
+              onChange={setTags}
+              suggestions={tagSuggestions}
+              disabled={submitting}
+              placeholder="Add tags..."
             />
           </div>
 

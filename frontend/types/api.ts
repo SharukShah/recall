@@ -17,6 +17,7 @@ export interface CaptureListItem {
   raw_text: string;
   source_type: string;
   facts_count: number;
+  tags: string[];
   created_at: string;
 }
 
@@ -43,6 +44,7 @@ export interface CaptureDetail {
   raw_text: string;
   source_type: string;
   why_it_matters?: string;
+  tags: string[];
   created_at: string;
   facts: Fact[];
   questions: Question[];
@@ -52,6 +54,13 @@ export interface CaptureRequest {
   raw_text: string;
   source_type: "text" | "voice" | "url";
   why_it_matters?: string;
+  tags?: string[];
+}
+
+export interface TagItem {
+  id: string;
+  name: string;
+  count: number;
 }
 
 export interface CaptureResponse {
@@ -202,4 +211,52 @@ export interface ReflectionListItem {
 export interface URLCaptureRequest {
   url: string;
   why_it_matters?: string;
+}
+
+// Question Bank
+export interface QuestionListItem {
+  id: string;
+  question_text: string;
+  answer_text: string;
+  question_type: string;
+  technique_used?: string;
+  mnemonic_hint?: string;
+  state: number;
+  due: string;
+  stability?: number;
+  difficulty?: number;
+  last_review?: string;
+  created_at: string;
+  capture_id?: string;
+  review_count: number;
+  last_rating?: number;
+  source_text?: string;
+}
+
+export interface QuestionDetail extends QuestionListItem {
+  accuracy_rate?: number;
+  extracted_point_content?: string;
+  capture_raw_text?: string;
+  review_logs: ReviewLogEntry[];
+}
+
+export interface ReviewLogEntry {
+  rating: number;
+  user_answer?: string;
+  ai_feedback?: string;
+  reviewed_at: string;
+}
+
+export interface QuestionListResponse {
+  questions: QuestionListItem[];
+  total: number;
+}
+
+export interface QuestionStatsSummary {
+  total_questions: number;
+  by_type: { question_type: string; count: number }[];
+  by_state: { state: number; count: number }[];
+  avg_difficulty?: number;
+  avg_stability?: number;
+  most_failed: { id: string; question_text: string; accuracy_rate: number }[];
 }

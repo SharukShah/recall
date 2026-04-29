@@ -18,6 +18,10 @@ import type {
   ReflectionStatusResponse,
   ReflectionListItem,
   URLCaptureRequest,
+  TagItem,
+  QuestionListResponse,
+  QuestionDetail,
+  QuestionStatsSummary,
 } from "@/types/api";
 import type {
   PushSubscriptionData,
@@ -130,6 +134,17 @@ export async function getCaptureDetail(id: string): Promise<CaptureDetail> {
 export async function deleteCapture(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/api/captures/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export async function getAllTags(): Promise<TagItem[]> {
+  return request<TagItem[]>("/api/captures/tags");
+}
+
+export async function updateCaptureTags(captureId: string, tags: string[]): Promise<{ tags: string[] }> {
+  return request<{ tags: string[] }>(`/api/captures/${encodeURIComponent(captureId)}/tags`, {
+    method: "PUT",
+    body: JSON.stringify({ tags }),
   });
 }
 
@@ -281,12 +296,12 @@ export async function getGraphData(
   limit: number = 200,
 ): Promise<GraphDataResponse> {
   return request<GraphDataResponse>(
-    `/api/knowledge/graph/data?min_similarity=${minSimilarity}&limit=${limit}`,
+    `/api/graph/data?min_similarity=${minSimilarity}&limit=${limit}`,
   );
 }
 
 export async function getNodeDetail(pointId: string): Promise<NodeDetailResponse> {
-  return request<NodeDetailResponse>(`/api/knowledge/graph/node/${encodeURIComponent(pointId)}`);
+  return request<NodeDetailResponse>(`/api/graph/node/${encodeURIComponent(pointId)}`);
 }
 
 // Analytics API
@@ -304,4 +319,41 @@ export async function getWeakAreas(limit: number = 10): Promise<WeakAreasRespons
 
 export async function getActivity(days: number = 90): Promise<ActivityResponse> {
   return request<ActivityResponse>(`/api/stats/analytics/activity?days=${days}`);
+}
+
+// Question Bank
+export async function listQuestions(params: {
+  limit?: number; offset?: number; search?: string;
+  question_type?: string; state?: number; sort?: string;
+  order?: string; capture_id?: string; tag?: string;
+}): Promise<QuestionListResponse> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  return request<QuestionListResponse>(`/api/questions?${qs.toString()}`);
+}
+
+export async function getQuestionDetail(id: string): Promise<QuestionDetail> {
+  return request<QuestionDetail>(`/api/questions/${encodeURIComponent(id)}`);
+}
+
+export async function updateQuestion(id: string, data: { question_text?: string; answer_text?: string; mnemonic_hint?: string; question_type?: string }): Promise<QuestionDetail> {
+  return request<QuestionDetail>(`/api/questions/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function deleteQuestion(id: string): Promise<void> {
+  await request(`/api/questions/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function bulkDeleteQuestions(ids: string[]): Promise<{ deleted_count: number }> {
+  return request(`/api/questions/bulk-delete`, { method: "POST", body: JSON.stringify({ question_ids: ids }) });
+}
+
+export async function rescheduleQuestion(id: string, action: string, days?: number): Promise<void> {
+  await request(`/api/questions/${encodeURIComponent(id)}/reschedule`, { method: "POST", body: JSON.stringify({ action, days }) });
+}
+
+export async function getQuestionStats(): Promise<QuestionStatsSummary> {
+  return request<QuestionStatsSummary>(`/api/questions/stats/summary`);
 }

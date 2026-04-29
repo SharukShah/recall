@@ -12,7 +12,7 @@ import asyncpg
 from core import llm
 from core.embedder import embed_texts
 from core.fsrs_engine import create_new_card, card_to_db_dict
-from core.db_queries import insert_capture, insert_extracted_point, insert_question, update_point_embedding
+from core.db_queries import insert_capture, insert_extracted_point, insert_question, update_point_embedding, set_capture_tags
 from models.capture_models import CaptureRequest, CaptureResponse
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,10 @@ class CaptureService:
                     conn, raw_text, request.source_type, why_it_matters,
                 )
                 logger.info(f"Capture stored: {capture_id}")
+
+                # Save tags if provided
+                if request.tags:
+                    await set_capture_tags(conn, capture_id, request.tags)
 
                 point_ids = []
                 for fact in extracted.facts:

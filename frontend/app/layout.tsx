@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AppShell } from "@/components/layout/AppShell";
 import { PWARegistration } from "@/components/layout/PWARegistration";
+import { ThemeProvider } from "@/components/shared/ThemeProvider";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -28,8 +29,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="ReCall" />
       </head>
       <body className={inter.className}>
-        <PWARegistration />
-        <AppShell>{children}</AppShell>
+        <ThemeProvider>
+          <PWARegistration />
+          <AppShell>{children}</AppShell>
+        </ThemeProvider>
       </body>
     </html>
   );

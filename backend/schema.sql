@@ -116,3 +116,23 @@ CREATE INDEX IF NOT EXISTS idx_teach_sessions_status ON teach_sessions (status, 
 CREATE INDEX IF NOT EXISTS idx_reflections_created ON reflections (created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reflections_one_per_day ON reflections (date(created_at AT TIME ZONE 'UTC'));
 CREATE INDEX IF NOT EXISTS idx_connection_questions_points ON connection_questions (point_a_id, point_b_id);
+
+-- ============================================================
+-- Phase 5 Migration: Tags
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS capture_tags (
+    capture_id UUID NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (capture_id, tag_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name);
+CREATE INDEX IF NOT EXISTS idx_capture_tags_capture ON capture_tags (capture_id);
+CREATE INDEX IF NOT EXISTS idx_capture_tags_tag ON capture_tags (tag_id);

@@ -11,7 +11,6 @@ from models.loci_models import (
 )
 from services.loci_service import LociService
 from core.rate_limiter import rate_limit
-from core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,7 +29,6 @@ def get_loci_service(request: Request) -> LociService:
 async def create_loci_session(
     data: LociCreateRequest,
     service: LociService = Depends(get_loci_service),
-    user = Depends(get_current_user),
 ):
     """Create a new memory palace walkthrough."""
     try:
@@ -60,7 +58,6 @@ async def create_loci_session(
 async def get_loci_session(
     session_id: str,
     service: LociService = Depends(get_loci_service),
-    user = Depends(get_current_user),
 ):
     """Get a loci session by ID."""
     session = await service.get(session_id)
@@ -74,7 +71,6 @@ async def submit_loci_recall(
     session_id: str,
     data: LociRecallRequest,
     service: LociService = Depends(get_loci_service),
-    user = Depends(get_current_user),
 ):
     """Submit a recall attempt and get evaluation."""
     try:
@@ -94,7 +90,6 @@ async def list_loci_sessions(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     service: LociService = Depends(get_loci_service),
-    user = Depends(get_current_user),
 ):
     """List all loci sessions."""
     return await service.list(limit, offset)

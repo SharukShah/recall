@@ -12,7 +12,6 @@ from models.notification_models import (
 from services.notification_service import NotificationService
 from core.push import ensure_vapid_keys
 from core.rate_limiter import rate_limit
-from core.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,7 +26,6 @@ def get_notification_service(request: Request) -> NotificationService:
 async def subscribe_push(
     subscription: PushSubscription,
     service: NotificationService = Depends(get_notification_service),
-    user = Depends(get_current_user),
 ):
     """Store a push notification subscription."""
     try:
@@ -61,7 +59,6 @@ async def subscribe_push(
 async def unsubscribe_push(
     subscription: PushSubscription,
     service: NotificationService = Depends(get_notification_service),
-    user = Depends(get_current_user),
 ):
     """Remove a push notification subscription."""
     try:
@@ -75,7 +72,6 @@ async def unsubscribe_push(
 @router.get("/settings", response_model=NotificationSettingsResponse)
 async def get_notification_settings(
     service: NotificationService = Depends(get_notification_service),
-    user = Depends(get_current_user),
 ):
     """Get notification settings."""
     settings = await service.get_settings()
@@ -104,7 +100,6 @@ async def get_notification_settings(
 async def update_notification_settings(
     settings: NotificationSettings,
     service: NotificationService = Depends(get_notification_service),
-    user = Depends(get_current_user),
 ):
     """Update notification settings."""
     try:
@@ -119,7 +114,6 @@ async def update_notification_settings(
 async def send_test_notification(
     request: TestNotificationRequest,
     service: NotificationService = Depends(get_notification_service),
-    user = Depends(get_current_user),
 ):
     """Send a test notification to all subscriptions."""
     try:
