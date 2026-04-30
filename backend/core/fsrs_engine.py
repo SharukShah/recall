@@ -37,7 +37,7 @@ def card_to_db_dict(card: Card) -> dict:
         "due": card.due,
         "stability": card.stability,
         "difficulty": card.difficulty,
-        "step": card.step,
+        "step": card.step if card.step is not None else 0,
         "state": card.state.value if isinstance(card.state, State) else int(card.state),
         "last_review": card.last_review,
     }

@@ -14,6 +14,7 @@ from config import settings
 from db import create_db_pool, close_db_pool
 from routers import captures, reviews, stats, knowledge, voice, questions
 from routers import interviews, behavioral
+from routers import graph, loci, notifications, reflections, teach, voice_ws
 
 # Configure logging
 logging.basicConfig(
@@ -104,6 +105,12 @@ app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(questions.router, prefix="/api/questions", tags=["questions"])
 app.include_router(interviews.router, prefix="/api/interviews", tags=["interviews"])
 app.include_router(behavioral.router, prefix="/api/behavioral", tags=["behavioral"])
+app.include_router(graph.router, prefix="/api/graph", tags=["graph"])
+app.include_router(loci.router, prefix="/api/loci", tags=["loci"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+app.include_router(reflections.router, prefix="/api/reflections", tags=["reflections"])
+app.include_router(teach.router, prefix="/api/teach", tags=["teach"])
+app.include_router(voice_ws.router, tags=["voice-ws"])
 
 
 # TODO: Mount routers in later steps

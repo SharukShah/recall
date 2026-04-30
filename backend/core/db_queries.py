@@ -378,10 +378,11 @@ async def update_point_embedding(
     embedding: list[float],
 ) -> None:
     """Set the embedding vector for an extracted_point."""
+    vec_str = "[" + ",".join(str(f) for f in embedding) + "]"
     async with await _acquire(pool_or_conn) as conn:
         await conn.execute(
-            "UPDATE extracted_points SET embedding = $1 WHERE id = $2",
-            embedding,
+            "UPDATE extracted_points SET embedding = $1::text::vector WHERE id = $2",
+            vec_str,
             uuid.UUID(point_id),
         )
 
@@ -397,6 +398,7 @@ async def search_similar_points(
     Returns rows with similarity score, joined with capture metadata.
     """
     async with await _acquire(pool_or_conn) as conn:
+        vec_str = "[" + ",".join(str(f) for f in query_embedding) + "]"
         rows = await conn.fetch(
             """
             SELECT
@@ -405,18 +407,18 @@ async def search_similar_points(
                 ep.content_type,
                 ep.capture_id,
                 ep.created_at,
-                1 - (ep.embedding <=> $1::vector) AS similarity,
+                1 - (ep.embedding <=> $1::text::vector) AS similarity,
                 c.raw_text AS capture_raw_text,
                 c.source_type AS capture_source_type,
                 c.created_at AS capture_created_at
             FROM extracted_points ep
             JOIN captures c ON c.id = ep.capture_id
             WHERE ep.embedding IS NOT NULL
-              AND 1 - (ep.embedding <=> $1::vector) >= $3
-            ORDER BY ep.embedding <=> $1::vector
+              AND 1 - (ep.embedding <=> $1::text::vector) >= $3
+            ORDER BY ep.embedding <=> $1::text::vector
             LIMIT $2
             """,
-            query_embedding,
+            vec_str,
             limit,
             min_similarity,
         )
@@ -1208,6 +1210,124 @@ async def create_star_story(
             title, situation, task, action, result, competency, strength_rating,
         )
     return story_id
+
+
+# ============================================================
+# REFLECTION QUERIES
+# ============================================================
+
+async def insert_reflection(pool_or_conn: PoolOrConn, content: str) -> str:
+    """Insert a new reflection. Returns its UUID."""
+    reflection_id = str(uuid.uuid4())
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            "INSERT INTO reflections (id, content) VALUES ($1, $2)",
+            uuid.UUID(reflection_id), content,
+        )
+    return reflection_id
+
+
+async def update_reflection_capture(
+    pool_or_conn: PoolOrConn, reflection_id: str, capture_id: str
+) -> None:
+    """Link a reflection to a capture."""
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            "UPDATE reflections SET capture_id = $1 WHERE id = $2",
+            uuid.UUID(capture_id), uuid.UUID(reflection_id),
+        )
+
+
+async def has_reflected_today(pool_or_conn: PoolOrConn) -> bool:
+    """Check if the user has already reflected today."""
+    async with await _acquire(pool_or_conn) as conn:
+        return await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM reflections WHERE date(created_at AT TIME ZONE 'UTC') = CURRENT_DATE)"
+        )
+
+
+async def get_reflection_streak(pool_or_conn: PoolOrConn) -> int:
+    """Get consecutive days of reflection (including today)."""
+    async with await _acquire(pool_or_conn) as conn:
+        row = await conn.fetchval("""
+            WITH reflection_dates AS (
+                SELECT DISTINCT date(created_at AT TIME ZONE 'UTC') AS d FROM reflections
+            ),
+            numbered AS (
+                SELECT d, d - (ROW_NUMBER() OVER (ORDER BY d DESC))::int AS grp
+                FROM reflection_dates
+                WHERE d <= CURRENT_DATE
+            )
+            SELECT COUNT(*) FROM numbered
+            WHERE grp = (SELECT grp FROM numbered WHERE d = CURRENT_DATE LIMIT 1)
+        """)
+    return row or 0
+
+
+async def get_last_reflection_at(pool_or_conn: PoolOrConn):
+    """Get the timestamp of the most recent reflection."""
+    async with await _acquire(pool_or_conn) as conn:
+        return await conn.fetchval(
+            "SELECT created_at FROM reflections ORDER BY created_at DESC LIMIT 1"
+        )
+
+
+async def list_reflections(pool_or_conn: PoolOrConn, limit: int, offset: int) -> list:
+    """List reflections, newest first."""
+    async with await _acquire(pool_or_conn) as conn:
+        return await conn.fetch(
+            "SELECT id, content, capture_id, created_at FROM reflections ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            limit, offset,
+        )
+
+
+# ============================================================
+# TEACH SESSION QUERIES
+# ============================================================
+
+async def insert_teach_session(pool_or_conn: PoolOrConn, topic: str, plan_json: dict) -> str:
+    """Insert a new teach session. Returns its UUID."""
+    import json as _json
+    session_id = str(uuid.uuid4())
+    async with await _acquire(pool_or_conn) as conn:
+        await conn.execute(
+            "INSERT INTO teach_sessions (id, topic, plan_json) VALUES ($1, $2, $3::jsonb)",
+            uuid.UUID(session_id), topic, _json.dumps(plan_json),
+        )
+    return session_id
+
+
+async def get_teach_session(pool_or_conn: PoolOrConn, session_id: str):
+    """Get a teach session by ID."""
+    async with await _acquire(pool_or_conn) as conn:
+        return await conn.fetchrow(
+            "SELECT id, topic, plan_json, current_chunk, status, capture_id, created_at FROM teach_sessions WHERE id = $1",
+            uuid.UUID(session_id),
+        )
+
+
+async def get_teach_session_for_update(conn: asyncpg.Connection, session_id: str):
+    """Get a teach session with FOR UPDATE lock (use inside a transaction)."""
+    return await conn.fetchrow(
+        "SELECT id, topic, plan_json, current_chunk, status, capture_id, created_at FROM teach_sessions WHERE id = $1 FOR UPDATE",
+        uuid.UUID(session_id),
+    )
+
+
+async def update_teach_session_chunk(conn: asyncpg.Connection, session_id: str, chunk_index: int) -> None:
+    """Advance a teach session to a new chunk index."""
+    await conn.execute(
+        "UPDATE teach_sessions SET current_chunk = $2, updated_at = NOW() WHERE id = $1",
+        uuid.UUID(session_id), chunk_index,
+    )
+
+
+async def complete_teach_session(conn: asyncpg.Connection, session_id: str, capture_id: str | None) -> None:
+    """Mark a teach session as complete."""
+    await conn.execute(
+        "UPDATE teach_sessions SET status = 'complete', capture_id = $2, updated_at = NOW() WHERE id = $1",
+        uuid.UUID(session_id), uuid.UUID(capture_id) if capture_id else None,
+    )
 
 
 async def list_star_stories(
