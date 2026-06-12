@@ -31,6 +31,8 @@ export function ReviewSession() {
     setAnswer,
     checkAnswer,
     submitRating,
+    skipQuestion,
+    retryQuestion,
     endSession,
     retryLoad,
   } = useReviewSession(focusCategories);
@@ -161,50 +163,76 @@ export function ReviewSession() {
         total={state.questions.length}
       />
 
-      {(state.phase === "question" || state.phase === "evaluating") && (
-        <div className="animate-slide-in-left" key={`q-${state.currentIndex}`}>
-          <QuestionCard
-            question={currentQuestion}
-            answer={state.currentAnswer}
-            onAnswerChange={setAnswer}
-            onCheckAnswer={checkAnswer}
-            isEvaluating={state.phase === "evaluating"}
-            answerRef={answerRef}
-            onVoiceAnswer={voice.voiceEnabled && voice.isSpeechSupported ? handleVoiceAnswer : undefined}
-            isRecording={voice.isRecording}
-          />
-        </div>
-      )}
+      <div className="flex gap-6">
+        {/* Main content area */}
+        <div className="flex-1 min-w-0 space-y-6">
+          {(state.phase === "question" || state.phase === "evaluating") && (
+            <div className="animate-slide-in-left" key={`q-${state.currentIndex}`}>
+              <QuestionCard
+                question={currentQuestion}
+                answer={state.currentAnswer}
+                onAnswerChange={setAnswer}
+                onCheckAnswer={checkAnswer}
+                isEvaluating={state.phase === "evaluating"}
+                answerRef={answerRef}
+                onVoiceAnswer={voice.voiceEnabled && voice.isSpeechSupported ? handleVoiceAnswer : undefined}
+                isRecording={voice.isRecording}
+              />
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={skipQuestion}
+                  disabled={state.phase === "evaluating"}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-muted"
+                >
+                  Skip →
+                </button>
+              </div>
+            </div>
+          )}
 
-      {(state.phase === "question" || state.phase === "evaluating" || state.phase === "feedback" || state.phase === "rating") && (
-        <UpcomingQuestions questions={state.questions} currentIndex={state.currentIndex} />
-      )}
+          {(state.phase === "feedback" || state.phase === "rating") && state.evaluation && (
+            <div className="space-y-6 animate-crossfade-in" ref={feedbackRef} tabIndex={-1}>
+              <FeedbackCard evaluation={state.evaluation} />
 
-      {(state.phase === "feedback" || state.phase === "rating") && state.evaluation && (
-        <div className="space-y-6 animate-crossfade-in" ref={feedbackRef} tabIndex={-1}>
-          <FeedbackCard evaluation={state.evaluation} />
-          <RatingButtons
-            suggestedRating={state.evaluation.suggested_rating}
-            onRate={submitRating}
-            disabled={state.phase === "rating"}
-          />
-        </div>
-      )}
+              <RatingButtons
+                suggestedRating={state.evaluation.suggested_rating}
+                onRate={submitRating}
+                disabled={state.phase === "rating"}
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={skipQuestion}
+                  disabled={state.phase === "rating"}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-muted"
+                >
+                  Skip without rating →
+                </button>
+              </div>
+            </div>
+          )}
 
-      {state.phase === "feedback" && !state.evaluation && state.error && (
-        <div className="space-y-6 animate-crossfade-in" ref={feedbackRef} tabIndex={-1}>
-          <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 p-4 text-sm text-yellow-800 dark:text-yellow-200">
-            Evaluation failed — rate this one yourself based on how well you think you knew the answer.
-          </div>
-          <RatingButtons
-            onRate={submitRating}
-            disabled={false}
-          />
-        </div>
-      )}
+          {state.phase === "feedback" && !state.evaluation && state.error && (
+            <div className="space-y-6 animate-crossfade-in" ref={feedbackRef} tabIndex={-1}>
+              <div className="rounded-lg border border-yellow-200 dark:border-yellow-800 p-4 text-sm text-yellow-800 dark:text-yellow-200">
+                Evaluation failed — rate this one yourself based on how well you think you knew the answer.
+              </div>
+              <RatingButtons
+                onRate={submitRating}
+                disabled={false}
+              />
+            </div>
+          )}
 
-      {state.phase === "scheduled" && state.lastSchedule && (
+          {state.phase === "scheduled" && state.lastSchedule && (
         <div className="flex flex-col items-center gap-3 py-8 animate-crossfade-in">
+          {state.lastSchedule.is_leech && (
+            <div className="w-full rounded-lg border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20 p-3 text-center mb-2">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">⚠️ Struggling with this one</p>
+              <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                Failed {state.lastSchedule.fail_count} times — try breaking it into simpler parts or using a mnemonic
+              </p>
+            </div>
+          )}
           <div className="rounded-full bg-primary/10 p-3">
             <svg className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -222,6 +250,17 @@ export function ReviewSession() {
           </p>
         </div>
       )}
+        </div>
+
+        {/* Sidebar: upcoming questions — hidden on mobile, sticky on desktop */}
+        {(state.phase === "question" || state.phase === "evaluating" || state.phase === "feedback" || state.phase === "rating") && (
+          <div className="hidden lg:block w-56 shrink-0">
+            <div className="sticky top-24">
+              <UpcomingQuestions questions={state.questions} currentIndex={state.currentIndex} />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* End Session confirmation dialog */}
       {showConfirm && (

@@ -1,6 +1,6 @@
 """
 Live integration tests for the Question Bank API.
-Tests all 7 endpoints against real DB (localhost:8001).
+Tests all 7 endpoints against real DB (localhost:8000).
 
 Endpoints tested:
   GET    /api/questions              — list with filters, search, sort, pagination
@@ -18,7 +18,7 @@ import uuid
 sys.path.insert(0, "E:\\Sharuk\\recall\\backend")
 import httpx
 
-BASE = "http://localhost:8001"
+BASE = "http://localhost:8000"
 
 
 async def main():

@@ -53,7 +53,7 @@ UNIFIED_FUNCTIONS = [
     },
     {
         "name": "evaluate_answer",
-        "description": "MANDATORY: Call this for EVERY user answer during a review session. Do NOT evaluate answers yourself. This function scores the answer, provides feedback, schedules the next review, and returns the next question. Pass the question_id from the current question and the user's spoken answer.",
+        "description": "MANDATORY: Call this for EVERY user answer during a review session. You MUST call this BEFORE responding to the user. NEVER say 'Actually', 'correct', 'not quite', or evaluate the answer yourself. After this returns, follow the instruction field EXACTLY — say the feedback then read the next question. NEVER say 'Want me to capture?' or ask any question. Just give feedback and read the next question.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -65,7 +65,7 @@ UNIFIED_FUNCTIONS = [
     },
     {
         "name": "next_question",
-        "description": "Get the next review question. Call this when the user says 'next', 'next question', 'continue', 'move on', or 'yes' during a review session. Also call this if you accidentally evaluated the user's answer yourself instead of calling evaluate_answer.",
+        "description": "Get the next review question. Call when user says 'next', 'skip', 'continue', 'move on', or 'mark it done'. After this returns, read the question text from the response. NEVER offer to capture or ask any question — just read the next question.",
         "parameters": {"type": "object", "properties": {}},
     },
     {
@@ -254,6 +254,7 @@ class UnifiedVoiceSession:
     rated_question_ids: set = field(default_factory=set)
     review_awaiting_answer: bool = False  # True when agent asked a question, waiting for user
     review_current_question_id: str | None = None  # Track current question for auto-eval
+    review_teaching_retries: dict = field(default_factory=dict)  # question_id -> retry count
 
     # Teach state
     teach_session_id: str | None = None
@@ -333,7 +334,7 @@ When the user says "capture it", "save that", or "done":
 - You ALREADY HAVE the conversation context. Summarize the key facts yourself and call finish_capture.
 - Do NOT ask "What do you want to capture?" -- use what was just discussed.
 - After processing, report: "Captured [N] facts and [M] review questions."
-- Then ask: "Why does this matter to you?" and save their answer with save_why_it_matters.
+- Do NOT ask "Why does this matter to you?" -- automatically call save_why_it_matters with why_it_matters="Interview preparation" using the capture_id from finish_capture.
 - Then offer: "Want me to quiz you on this?"
 
 When the user is dictating or explaining something and says something FACTUALLY WRONG:
@@ -345,15 +346,21 @@ When the user wants to practice recall ("quiz me", "test me", "review"):
 - If the user JUST captured something → call start_review_session with recent_only=true.
 - Otherwise → call start_review_session with recent_only=false.
 
-**During review, follow this exact loop:**
-1. Read the question from the response.
-2. Wait for the user to answer.
-3. Call evaluate_answer(question_id, user_answer). Do this BEFORE saying anything.
-4. Read the feedback from evaluate_answer's response.
-5. If next_question exists, read it. If done=true, give summary.
-6. If you forgot to call evaluate_answer and already responded, call next_question to advance.
+**STRICT REVIEW LOOP — follow EXACTLY:**
+1. Read the question text to the user.
+2. Wait for the user to finish answering. Do NOT interrupt or respond while they are speaking.
+3. IMMEDIATELY call evaluate_answer(question_id, user_answer) with EXACTLY what they said. Do this BEFORE saying ANYTHING. You MUST NOT speak before calling this function.
+4. WAIT for the evaluate_answer response. Read ONLY the feedback and instruction from the response. Do NOT add your own evaluation.
+5. The response contains next_question — read it immediately. If done=true, give the summary.
+6. Repeat from step 2.
 
-**Rules:** Never judge answers yourself. Never say "correct" or "incorrect" without calling evaluate_answer first. If the user says "next" or "move on", call next_question.
+**ABSOLUTE RULES FOR REVIEW MODE:**
+- You are NOT allowed to evaluate answers yourself. NEVER say "Actually...", "That's right", "Not quite", "Correct", or ANY judgment before calling evaluate_answer.
+- You are NOT allowed to say "Want me to capture/save that?" during review. NEVER offer to capture during review.
+- You are NOT allowed to ask "Ready for the next question?" or "Would you like to continue?". Just read the next question.
+- If the user says "next", "skip", or "move on" → call next_question.
+- If you accidentally responded without calling evaluate_answer → call next_question immediately to advance.
+- REMEMBER: The user's speech may contain STT artifacts (e.g., "ash" means "hash", "curly braces" might sound like "braces"). Pass the raw speech to evaluate_answer — the backend handles interpretation.
 
 ### 3. Teach a Topic
 When the user wants to learn ("teach me about...", "explain...", "help me understand..."):
@@ -386,8 +393,9 @@ When user wants to reflect or it's evening and they haven't reflected:
 
 ## Greeting
 Start with a brief contextual greeting based on USER CONTEXT:
-- If reviews are due: mention them and offer to start.
+- If reviews are due: mention them and offer to start. When the user says "yes", "yeah", "sure", or any affirmative → IMMEDIATELY call start_review_session(recent_only=false). Do NOT ask follow-up questions like "all due or specific topic?".
 - If it's evening and no reflection done: suggest reflection.
+- If no reviews due and user is preparing for interviews: suggest a mock interview or behavioral practice.
 - Otherwise: warm greeting, ask what they'd like to do.
 One sentence only.
 
@@ -430,14 +438,40 @@ When user wants behavioral practice ("behavioral interview", "STAR practice"):
 - Give detailed STAR feedback: what had clear Situation, what lacked specific Action, etc.
 - Offer: "Want to save this story?" → call capture_behavioral_story.
 
-## Important Rules
+## CRITICAL RULES
 - NEVER give away answers before the user attempts them in review.
-- Keep voice responses SHORT. 1-2 sentences for most responses. Up to 4-5 sentences when teaching.
+- Keep voice responses SHORT. 1-2 sentences max. Up to 4 sentences only when teaching.
 - Use natural spoken language -- no bullet points or markdown.
 - If a function fails, handle gracefully -- suggest trying again.
 - If user is silent: "I'm here when you're ready."
-- When correcting the user, be gentle but clear about the correct information.
-- REVIEW MODE REMINDER: When a review session is active, EVERY user response is an answer. Call evaluate_answer IMMEDIATELY. If you already responded without calling it, call next_question to advance."""
+
+## FORBIDDEN PHRASES DURING REVIEW (never say these)
+- "Want me to capture/save this?"
+- "Would you like to continue?"
+- "Want me to explain more?"
+- "Ready for the next question?"
+- "Want me to give you an example?"
+- "Want me to teach you?"
+- "How can I assist you?"
+- "Let me know if you'd like to..."
+- "Alright, let me know..."
+- "Want to continue with another topic?"
+Instead: just give brief feedback and read the next question.
+
+## REVIEW MODE RULES (HIGHEST PRIORITY)
+When a review session is active, these rules OVERRIDE everything else:
+1. EVERY user response after a question is an ANSWER. Call evaluate_answer IMMEDIATELY. Do NOT speak first.
+2. NEVER self-evaluate. NEVER say "Actually", "That's right", "Correct", "Exactly", "Not quite", or ANY judgment without calling evaluate_answer first.
+3. NEVER offer to capture or save during review. You are in REVIEW mode, not CAPTURE mode.
+4. NEVER ask ANY question starting with "Want me to...?", "Would you like to...?", "Ready for...?". Just proceed.
+5. After evaluate_answer returns: read the feedback field (1 sentence), then IMMEDIATELY read the next_question text from the response. Do NOT add anything else. Do NOT ask if they want to continue.
+6. When evaluate_answer returns retry_question: follow the instruction field exactly. Teach briefly, ask them to explain back, then call evaluate_answer AGAIN with same question_id.
+7. When user says "skip", "next", "move on", "mark it done" → call next_question.
+8. If you accidentally spoke without calling evaluate_answer → call next_question immediately.
+9. VOICE STYLE: Speak directly to the user. Keep feedback to ONE sentence. Then read next question.
+10. The review session ends ONLY when evaluate_answer returns done=true. Do NOT end it yourself. NEVER say "all done" or stop reviewing unless done=true.
+11. YOUR JOB IN REVIEW: feedback → next question → wait → evaluate → repeat. Nothing else. No offers, no questions, no suggestions.
+12. The instruction field in evaluate_answer response tells you EXACTLY what to say. Follow it word for word."""
 
 
 # ---------------------------------------------------------------------------
@@ -594,9 +628,22 @@ class VoiceSessionManager:
 
         # Short utterances like "yes", "next", "no" are not answers
         stripped = user_text.strip().lower()
+        # Exact match skip phrases
         skip_phrases = {"yes", "no", "yeah", "yep", "nope", "next", "next question",
-                        "continue", "move on", "skip", "ok", "okay"}
-        if stripped in skip_phrases:
+                        "continue", "move on", "skip", "ok", "okay", "right",
+                        "got it", "i see", "understood", "makes sense", "sure",
+                        "uh huh", "mm hmm", "hmm", "hm", "uh", "that's right",
+                        "alright", "all right", "i got it", "i understand"}
+        if stripped.rstrip("!.,") in skip_phrases or stripped in skip_phrases:
+            return None
+
+        # Keyword-based skip: if utterance contains navigation words and is short, skip it
+        nav_keywords = {"next", "skip", "move on", "continue", "pass", "go ahead"}
+        if len(stripped.split()) <= 6 and any(kw in stripped for kw in nav_keywords):
+            return None
+
+        # Very short utterances (< 3 words) are likely not real answers
+        if len(stripped.split()) < 3:
             return None
 
         logger.info(f"Server-side auto-eval: question={session.review_current_question_id}, answer={user_text[:80]}")
@@ -649,11 +696,21 @@ class VoiceSessionManager:
             )
 
         elif fn == "finish_capture":
+            # Block capture during active review — LLM should not offer capture mid-review
+            if session.active_workflow == "review" and session.review_queue:
+                logger.warning("Blocked finish_capture during active review session")
+                remaining = len(session.review_queue) - session.review_index
+                return {
+                    "error": "Cannot capture during review. You are in review mode.",
+                    "instruction": f"Continue the review. {remaining} questions remaining. Read the next question.",
+                }
             return await self._finish_capture(
                 session, params.get("final_transcript", "")
             )
 
         elif fn == "save_why_it_matters":
+            if session.active_workflow == "review" and session.review_queue:
+                return {"error": "Cannot save during review. Continue the review."}
             if not session.last_capture_id:
                 return {"error": "No recent capture. Call finish_capture first."}
             return await self._save_why_it_matters(
@@ -751,11 +808,14 @@ class VoiceSessionManager:
             q = session.review_queue[session.review_index]
             session.review_awaiting_answer = True
             session.review_current_question_id = q["question_id"]
+            remaining = len(session.review_queue) - session.review_index
+            qnum = session.review_index + 1
+            qtotal = len(session.review_queue)
             return {
                 "due_count": len(session.review_queue),
                 "session_already_active": True,
-                "instruction": "Review session already active. Read the question to the user. When they answer, call evaluate_answer with the question_id and their answer. Do NOT evaluate their answer yourself.",
-                "remaining": len(session.review_queue) - session.review_index,
+                "instruction": f"Review already active. Say: 'Question {qnum} of {qtotal}: {q['question_text']}' — NOTHING ELSE.",
+                "remaining": remaining,
                 "first_question": {
                     "question_id": q["question_id"],
                     "question_text": q["question_text"],
@@ -786,15 +846,16 @@ class VoiceSessionManager:
             session.active_workflow = None
             session.review_awaiting_answer = False
             session.review_current_question_id = None
-            return {"due_count": 0, "message": "No reviews due right now!"}
+            return {"due_count": 0, "message": "No reviews due right now! You could try a mock interview, practice behavioral questions, or capture new content."}
 
         # Return first question automatically
         first = session.review_queue[0]
         session.review_awaiting_answer = True
         session.review_current_question_id = first["question_id"]
+        total = len(session.review_queue)
         return {
-            "due_count": len(session.review_queue),
-            "instruction": "Read the question to the user. When they answer, call evaluate_answer with the question_id and their answer. Do NOT evaluate their answer yourself.",
+            "due_count": total,
+            "instruction": f"Say: 'You have {total} reviews. Question 1 of {total}: {first['question_text']}' — NOTHING ELSE. Wait for answer, then call evaluate_answer.",
             "first_question": {
                 "question_id": first["question_id"],
                 "question_text": first["question_text"],
@@ -806,22 +867,41 @@ class VoiceSessionManager:
         }
 
     async def _get_next_question(self, session: UnifiedVoiceSession) -> dict:
-        # Auto-rate the current question if it was skipped (LLM didn't call evaluate_answer)
+        # Always advance past the current question when next_question is called
         current_idx = session.review_index
         if current_idx < len(session.review_queue):
             current_q = session.review_queue[current_idx]
             qid = current_q["question_id"]
             if qid not in session.rated_question_ids:
-                # Auto-rate with default rating 3 (Good) and advance
+                # Auto-rate with rating 4 (Easy) — user skipped = already knows it
                 session.rated_question_ids.add(qid)
-                session.review_index += 1
-                session.reviewed_count += 1
-                session.session_reviews += 1
                 # Schedule the auto-rate in background (fire-and-forget)
                 import asyncio
-                asyncio.create_task(self._auto_rate_question(qid, 3))
+                asyncio.create_task(self._auto_rate_question(qid, 4))
+            # ALWAYS advance index — whether rated already (teaching mode) or not (skip)
+            session.review_index += 1
+            session.reviewed_count += 1
+            session.session_reviews += 1
 
         if session.review_index >= len(session.review_queue):
+            # Check if more due questions exist before declaring done
+            more = await self._reload_due_questions(session)
+            if more:
+                q = session.review_queue[session.review_index]
+                session.review_awaiting_answer = True
+                session.review_current_question_id = q["question_id"]
+                qnum = session.review_index + 1
+                qtotal = len(session.review_queue)
+                return {
+                    "done": False,
+                    "instruction": f"More questions due. Say: 'Next question, number {qnum} of {qtotal}: {q['question_text']}' — NOTHING ELSE.",
+                    "question_id": q["question_id"],
+                    "question_text": q["question_text"],
+                    "question_type": q["question_type"],
+                    "mnemonic_hint": q.get("mnemonic_hint"),
+                    "question_number": qnum,
+                    "total_questions": qtotal,
+                }
             session.active_workflow = None
             session.review_awaiting_answer = False
             session.review_current_question_id = None
@@ -834,21 +914,30 @@ class VoiceSessionManager:
         q = session.review_queue[session.review_index]
         session.review_awaiting_answer = True
         session.review_current_question_id = q["question_id"]
+        qnum = session.review_index + 1
+        qtotal = len(session.review_queue)
         return {
             "done": False,
-            "instruction": "Read this question to the user. When they answer, call evaluate_answer with the question_id and their answer.",
+            "instruction": f"Say: 'Question {qnum} of {qtotal}: {q['question_text']}' — NOTHING ELSE. Wait for answer, then call evaluate_answer.",
             "question_id": q["question_id"],
             "question_text": q["question_text"],
             "question_type": q["question_type"],
             "mnemonic_hint": q.get("mnemonic_hint"),
-            "question_number": session.review_index + 1,
-            "total_questions": len(session.review_queue),
+            "question_number": qnum,
+            "total_questions": qtotal,
         }
 
     async def _evaluate_answer(self, question_id: str, user_answer: str, session: UnifiedVoiceSession) -> dict:
-        """Evaluate, auto-rate via FSRS, advance index, and return next question."""
+        """Evaluate, auto-rate via FSRS, and either teach (poor) or advance (good)."""
         session.review_awaiting_answer = False
         session.review_current_question_id = None
+        # Clear answer buffer and cancel pending auto-eval to prevent race
+        if hasattr(session, '_answer_buffer'):
+            session._answer_buffer = ""
+        if hasattr(session, '_auto_eval_task') and session._auto_eval_task and not session._auto_eval_task.done():
+            session._auto_eval_task.cancel()
+        # Set cooldown to ignore late-arriving speech fragments from previous answer
+        session._eval_cooldown_until = time.monotonic() + 4.0
         valid_ids = {q["question_id"] for q in session.review_queue}
         if question_id not in valid_ids:
             return {"error": "Question not found in current review session"}
@@ -872,36 +961,94 @@ class VoiceSessionManager:
             except Exception as e:
                 logger.warning(f"Auto-rate failed for {question_id}: {e}")
 
-        # 3. Advance to next question
-        session.review_index += 1
-        session.reviewed_count += 1
-        session.session_reviews += 1
-
-        # 4. Build response with feedback + next question (or done)
+        # 3. Build response with feedback
         result: dict[str, Any] = {
             "correct_answer": resp.correct_answer,
             "score": resp.score,
             "feedback": resp.feedback,
         }
 
+        retries = session.review_teaching_retries.get(question_id, 0)
+
+        # 4. Wrong or partial on FIRST attempt -> teach and re-ask same question
+        if (resp.score == "wrong" or resp.score == "partial") and retries == 0:
+            session.review_teaching_retries[question_id] = 1
+            current_q = next((q for q in session.review_queue if q["question_id"] == question_id), None)
+            result["done"] = False
+            result["instruction"] = (
+                "The user's understanding is incomplete or incorrect.\n"
+                f"1. Briefly explain the correct concept: '{resp.correct_answer}' in simple terms (1-2 sentences)\n"
+                "2. Ask them to explain it back in their own words\n"
+                "3. When they answer, call evaluate_answer AGAIN with the SAME question_id\n"
+                "DO NOT offer to capture/save. DO NOT ask if they want to continue. Just teach and re-ask."
+            )
+            result["retry_question"] = {
+                "question_id": question_id,
+                "question_text": current_q["question_text"] if current_q else "",
+            }
+            # Longer cooldown for retry: ignore late fragments from original answer
+            # while LLM teaches and user listens before re-answering
+            session._eval_cooldown_until = time.monotonic() + 12.0
+            session.review_awaiting_answer = True
+            session.review_current_question_id = question_id
+            return result
+
+        # 5. Correct, or second attempt (pass or fail) -> advance
+        session.review_index += 1
+        session.reviewed_count += 1
+        session.session_reviews += 1
+
         if session.review_index >= len(session.review_queue):
-            result["done"] = True
-            result["reviewed_count"] = session.reviewed_count
-            result["correct_count"] = session.review_correct
-            session.active_workflow = None
-            session.review_awaiting_answer = False
-            session.review_current_question_id = None
+            # Check if more due questions exist before declaring done
+            more = await self._reload_due_questions(session)
+            if more:
+                nq = session.review_queue[session.review_index]
+                result["done"] = False
+                qnum = session.review_index + 1
+                qtotal = len(session.review_queue)
+                result["instruction"] = (
+                    f"Say brief feedback, then say: 'Next question, number {qnum} of {qtotal}: "
+                    f"{nq['question_text']}' — NOTHING ELSE."
+                )
+                result["next_question"] = {
+                    "question_id": nq["question_id"],
+                    "question_text": nq["question_text"],
+                    "question_type": nq["question_type"],
+                    "mnemonic_hint": nq.get("mnemonic_hint"),
+                    "question_number": session.review_index + 1,
+                    "total_questions": len(session.review_queue),
+                }
+                session.review_awaiting_answer = True
+                session.review_current_question_id = nq["question_id"]
+            else:
+                result["done"] = True
+                result["reviewed_count"] = session.reviewed_count
+                result["correct_count"] = session.review_correct
+                session.active_workflow = None
+                session.review_awaiting_answer = False
+                session.review_current_question_id = None
         else:
             nq = session.review_queue[session.review_index]
             result["done"] = False
-            result["instruction"] = "Read the feedback, then read the next question. When the user answers, call evaluate_answer again with the new question_id."
+            qnum = session.review_index + 1
+            qtotal = len(session.review_queue)
+            if resp.score == "wrong" or resp.score == "partial":
+                result["instruction"] = (
+                    f"Say: '{resp.feedback}' Then say: 'Next question, number {qnum} of {qtotal}: "
+                    f"{nq['question_text']}' — NOTHING ELSE. Do NOT ask any questions. Do NOT offer to capture."
+                )
+            else:
+                result["instruction"] = (
+                    f"Say brief praise, then IMMEDIATELY say: 'Next question, number {qnum} of {qtotal}: "
+                    f"{nq['question_text']}' — NOTHING ELSE. Do NOT ask any questions. Do NOT offer to capture."
+                )
             result["next_question"] = {
                 "question_id": nq["question_id"],
                 "question_text": nq["question_text"],
                 "question_type": nq["question_type"],
                 "mnemonic_hint": nq.get("mnemonic_hint"),
-                "question_number": session.review_index + 1,
-                "total_questions": len(session.review_queue),
+                "question_number": qnum,
+                "total_questions": qtotal,
             }
             session.review_awaiting_answer = True
             session.review_current_question_id = nq["question_id"]
@@ -916,6 +1063,33 @@ class VoiceSessionManager:
             await svc.rate(req)
         except Exception as e:
             logger.warning(f"Background auto-rate failed for {question_id}: {e}")
+
+    async def _reload_due_questions(self, session: UnifiedVoiceSession) -> bool:
+        """Check for more due questions and append them to the review queue.
+        Returns True if new questions were loaded, False if none remain."""
+        try:
+            already_seen = {q["question_id"] for q in session.review_queue}
+            svc = ReviewService(self.db_pool, self.openai, self.scheduler)
+            due_resp = await svc.get_due(limit=20)
+            new_questions = [
+                {
+                    "question_id": q.question_id,
+                    "question_text": q.question_text,
+                    "question_type": q.question_type,
+                    "mnemonic_hint": q.mnemonic_hint,
+                    "technique_used": q.technique_used,
+                }
+                for q in due_resp.questions
+                if q.question_id not in already_seen
+            ]
+            if new_questions:
+                session.review_queue.extend(new_questions)
+                logger.info(f"Reloaded {len(new_questions)} more due questions (total queue: {len(session.review_queue)})")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to reload due questions: {e}")
+            return False
 
     async def _review_recent_capture(self, session: UnifiedVoiceSession) -> dict:
         """Load review questions only from the most recent capture."""
@@ -1085,7 +1259,7 @@ class VoiceSessionManager:
         session.active_workflow = "review"
         if not session.review_queue:
             session.active_workflow = None
-            return {"due_count": 0, "message": "No questions due in those categories."}
+            return {"due_count": 0, "message": "No questions due in those categories. Try a mock interview on this topic, or practice your weak areas instead."}
         first = session.review_queue[0]
         session.review_awaiting_answer = True
         session.review_current_question_id = first["question_id"]
@@ -1190,10 +1364,11 @@ class VoiceSessionManager:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     """INSERT INTO voice_sessions (id, mode, duration_seconds, started_at, ended_at)
-                       VALUES ($1, $2, $3, NOW() - make_interval(secs => $3), NOW())""",
+                       VALUES ($1, $2, $3, NOW() - make_interval(secs => $4), NOW())""",
                     uuid.UUID(session.session_id),
                     "unified",
                     duration,
+                    float(duration),
                 )
         except Exception as e:
             logger.error(f"Failed to log voice session: {e}")

@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load saved settings
   const settings = await chrome.storage.sync.get(['apiUrl', 'authToken']);
-  apiUrlInput.value = settings.apiUrl || 'http://localhost:8001';
+  apiUrlInput.value = settings.apiUrl || 'http://localhost:8000';
   authTokenInput.value = settings.authToken || '';
 
   // Save settings

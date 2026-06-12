@@ -19,9 +19,10 @@ const PAGE_SIZE = 20;
 const typeFilters = [
   { key: "", label: "All" },
   { key: "recall", label: "Recall" },
-  { key: "cloze", label: "Cloze" },
+  { key: "explain_back", label: "Explain Back" },
   { key: "explain", label: "Explain" },
-  { key: "connection", label: "Connection" },
+  { key: "apply", label: "Apply" },
+  { key: "connect", label: "Connect" },
 ] as const;
 
 const stateFilters = [

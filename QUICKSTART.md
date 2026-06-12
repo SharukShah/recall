@@ -21,7 +21,7 @@ Start-Service postgresql-x64-16
 ```powershell
 # Open Terminal 1
 cd E:\Sharuk\recall\backend
-.\venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8001
+.\venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 **Expected Output:**
@@ -34,7 +34,7 @@ INFO:     OpenAI client initialized
 INFO:     FSRS scheduler initialized
 INFO:     Supervised notification task started
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8001
+INFO:     Uvicorn running on http://0.0.0.0:8000
 ```
 
 ### 3. Start Frontend Server
@@ -260,7 +260,7 @@ Navigate to: **http://localhost:3000**
 
 #### Test 16: Extension Settings
 1. Click extension icon → **"Options"**
-2. Set backend URL: `http://localhost:8001`
+2. Set backend URL: `http://localhost:8000`
 3. Set auth token (if using API_KEY in .env)
 4. Save settings
 5. **Expected Result:**
@@ -293,7 +293,7 @@ Navigate to: **http://localhost:3000**
 ### Using PowerShell
 
 ```powershell
-$baseUrl = "http://localhost:8001"
+$baseUrl = "http://localhost:8000"
 $headers = @{"Content-Type"="application/json"}
 
 # Test 1: Dashboard stats
@@ -326,18 +326,18 @@ Invoke-RestMethod -Uri "$baseUrl/api/notifications/settings" -Method GET
 
 ```bash
 # Get dashboard stats
-curl http://localhost:8001/api/stats/dashboard
+curl http://localhost:8000/api/stats/dashboard
 
 # Create capture
-curl -X POST http://localhost:8001/api/captures/ \
+curl -X POST http://localhost:8000/api/captures/ \
   -H "Content-Type: application/json" \
   -d '{"raw_text":"The solar system has 8 planets.","source_type":"text"}'
 
 # Get due reviews
-curl http://localhost:8001/api/reviews/due?limit=5
+curl http://localhost:8000/api/reviews/due?limit=5
 
 # Knowledge graph
-curl "http://localhost:8001/api/knowledge/graph/data?min_similarity=0.7&limit=100"
+curl "http://localhost:8000/api/knowledge/graph/data?min_similarity=0.7&limit=100"
 ```
 
 ---

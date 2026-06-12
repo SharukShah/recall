@@ -24,6 +24,13 @@ const scoreConfig = {
   },
 } as const;
 
+const ratingLabels: Record<number, { label: string; className: string }> = {
+  1: { label: "Again", className: "text-red-600 dark:text-red-400" },
+  2: { label: "Hard", className: "text-orange-600 dark:text-orange-400" },
+  3: { label: "Good", className: "text-green-600 dark:text-green-400" },
+  4: { label: "Easy", className: "text-blue-600 dark:text-blue-400" },
+};
+
 export function FeedbackCard({ evaluation }: FeedbackCardProps) {
   const config = scoreConfig[evaluation.score as keyof typeof scoreConfig];
   
@@ -36,13 +43,20 @@ export function FeedbackCard({ evaluation }: FeedbackCardProps) {
   return (
     <Card>
       <CardContent className="pt-6 space-y-4">
-        <div
-          className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold", config.className)}
-          role="status"
-          aria-label={`Your answer was ${config.label.toLowerCase()}`}
-        >
-          <span>{config.icon}</span>
-          <span>{config.label}</span>
+        <div className="flex items-center justify-between">
+          <div
+            className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold", config.className)}
+            role="status"
+            aria-label={`Your answer was ${config.label.toLowerCase()}`}
+          >
+            <span>{config.icon}</span>
+            <span>{config.label}</span>
+          </div>
+          {evaluation.suggested_rating && ratingLabels[evaluation.suggested_rating] && (
+            <span className={cn("text-xs font-medium", ratingLabels[evaluation.suggested_rating].className)}>
+              AI suggests: {ratingLabels[evaluation.suggested_rating].label}
+            </span>
+          )}
         </div>
 
         <div className="space-y-2 rounded-lg bg-secondary/50 p-3">

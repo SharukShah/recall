@@ -50,6 +50,24 @@ export function VoiceProgress({
         progressText = `All ${r.reviewed_count || 0} reviewed — ${r.correct_count || 0} correct!`;
         progressValue = progressMax;
       }
+    } else if (fn === "evaluate_answer") {
+      const score = (r.score as string) || "";
+      const nq = r.next_question as Record<string, unknown> | undefined;
+      if (r.done) {
+        progressText = `Review complete! ${r.correct_count || 0}/${r.reviewed_count || 0} correct`;
+        progressValue = progressMax || 1;
+        progressMax = progressMax || 1;
+      } else if (nq) {
+        const qNum = (nq.question_number as number) || 0;
+        const total = (nq.total_questions as number) || 0;
+        if (total > 0) {
+          progressText = `Question ${qNum} of ${total}`;
+          progressValue = qNum - 1;
+          progressMax = total;
+        }
+      } else if (r.retry_question) {
+        progressText = score === "partial" ? "Partially correct — try again" : "Not quite — try again";
+      }
     } else if (fn === "get_current_teach_chunk" || fn === "submit_teach_answer") {
       const idx = ((r.chunk_index as number) ?? 0) + 1;
       const total = (r.total_chunks as number) || 0;

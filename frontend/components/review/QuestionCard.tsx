@@ -35,19 +35,14 @@ export function QuestionCard({
     <div className="space-y-4">
       <Card>
         <CardContent className="pt-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="uppercase text-xs">
-              {question.question_type === "explain_back" ? "explain" : question.question_type}
-            </Badge>
-            {question.question_type === "connection" && (
-              <Badge variant="outline" className="text-xs text-primary border-primary">
-                Connection
-              </Badge>
-            )}
-          </div>
           <p className="text-base font-medium leading-relaxed">
             {question.question_text}
           </p>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="uppercase text-xs">
+              {question.question_type === "explain_back" ? "explain back" : question.question_type}
+            </Badge>
+          </div>
           {question.mnemonic_hint && (
             <div>
               <button

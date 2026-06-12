@@ -7,6 +7,7 @@ import { VoiceTranscript } from "@/components/voice/VoiceTranscript";
 import { VoiceProgress } from "@/components/voice/VoiceProgress";
 import { VoiceReviewQueue, type VoiceReviewItem } from "@/components/voice/VoiceReviewQueue";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const SUGGESTION_CHIPS = [
   { label: "Quiz me", icon: "🧠" },
@@ -38,11 +39,37 @@ export default function VoicePage() {
   const [reviewTotal, setReviewTotal] = useState(0);
   const [reviewActive, setReviewActive] = useState(false);
 
+  // Last evaluation result for visual feedback
+  const [lastEval, setLastEval] = useState<{
+    score: string;
+    feedback: string;
+    correct_answer: string;
+  } | null>(null);
+
   useEffect(() => {
     if (!lastFunctionResult) return;
     const { name, result: r } = lastFunctionResult;
 
+    // Track evaluation results
+    if (name === "evaluate_answer") {
+      setLastEval({
+        score: (r.score as string) || "",
+        feedback: (r.feedback as string) || "",
+        correct_answer: (r.correct_answer as string) || "",
+      });
+      // Dispatch review-completed for due count update (not on retry)
+      if (!r.retry_question) {
+        window.dispatchEvent(new CustomEvent("review-completed"));
+      }
+    }
+
+    // next_question also rates the skipped question — decrement due count
+    if ((name === "get_next_question" || name === "next_question") && !r.done) {
+      window.dispatchEvent(new CustomEvent("review-completed"));
+    }
+
     if (name === "start_review_session") {
+      setLastEval(null);
       const due = (r.due_count as number) || 0;
       if (due > 0 && r.first_question) {
         const fq = r.first_question as Record<string, unknown>;
@@ -198,6 +225,34 @@ export default function VoicePage() {
               <> &middot; {sessionSummary.review_correct as number}/{sessionSummary.reviewed_count as number} correct</>
             )}
           </p>
+        </div>
+      )}
+
+      {/* Last evaluation result */}
+      {isActive && lastEval && (
+        <div className={cn(
+          "w-full rounded-lg border p-3 text-sm transition-all",
+          lastEval.score === "correct"
+            ? "border-green-500/30 bg-green-500/10"
+            : lastEval.score === "partial"
+              ? "border-yellow-500/30 bg-yellow-500/10"
+              : "border-red-500/30 bg-red-500/10"
+        )}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+              lastEval.score === "correct"
+                ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                : lastEval.score === "partial"
+                  ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                  : "bg-red-500/20 text-red-600 dark:text-red-400"
+            )}>
+              {lastEval.score === "correct" ? "✓ Correct" : lastEval.score === "partial" ? "◐ Partial" : "✗ Wrong"}
+            </span>
+          </div>
+          {lastEval.feedback && (
+            <p className="text-muted-foreground text-xs mt-1">{lastEval.feedback}</p>
+          )}
         </div>
       )}
 

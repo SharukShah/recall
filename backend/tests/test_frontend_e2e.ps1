@@ -1,7 +1,7 @@
 ## Frontend E2E API Test Script
 ## Tests every API endpoint the frontend calls
 
-$base = "http://localhost:8001"
+$base = "http://localhost:8000"
 $pass = 0
 $fail = 0
 $skip = 0

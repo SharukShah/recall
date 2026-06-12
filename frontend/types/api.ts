@@ -109,6 +109,8 @@ export interface RateResponse {
   interval_days: number;
   state: number;
   state_label: string;
+  is_leech: boolean;
+  fail_count: number;
 }
 
 // Knowledge Search

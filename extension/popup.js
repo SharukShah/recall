@@ -2,7 +2,7 @@
 
 document.addEventListener('DOMContentLoaded', async () => {
   const settings = await chrome.storage.sync.get(['apiUrl', 'authToken']);
-  const apiUrl = settings.apiUrl || 'http://localhost:8001';
+  const apiUrl = settings.apiUrl || 'http://localhost:8000';
   const authToken = settings.authToken || '';
 
   const notConfiguredDiv = document.getElementById('not-configured');
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Open dashboard button
   document.getElementById('open-dashboard').addEventListener('click', () => {
-    const dashboardUrl = apiUrl.replace(':8001', ':3000').replace(':8000', ':3000');
+    const dashboardUrl = apiUrl.replace(':8000', ':3000').replace(':8000', ':3000');
     chrome.tabs.create({ url: dashboardUrl });
   });
 

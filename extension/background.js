@@ -20,7 +20,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     // Get settings from storage
     const settings = await chrome.storage.sync.get(['apiUrl', 'authToken']);
-    const apiUrl = settings.apiUrl || 'http://localhost:8001';
+    const apiUrl = settings.apiUrl || 'http://localhost:8000';
     const authToken = settings.authToken || '';
 
     if (!authToken) {
@@ -98,7 +98,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function handleCapture(text, title, url) {
   const settings = await chrome.storage.sync.get(['apiUrl', 'authToken']);
-  const apiUrl = settings.apiUrl || 'http://localhost:8001';
+  const apiUrl = settings.apiUrl || 'http://localhost:8000';
   const authToken = settings.authToken || '';
 
   if (!authToken) {

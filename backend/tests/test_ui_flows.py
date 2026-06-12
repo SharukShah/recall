@@ -2,13 +2,13 @@
 UI Flow Integration Tests — simulates every API call the frontend makes.
 Tests every page, every component, every user action.
 Run: python tests/test_ui_flows.py
-Requires: backend running on localhost:8001
+Requires: backend running on localhost:8000
 """
 import asyncio
 import json
 import httpx
 
-BASE = "http://localhost:8001"
+BASE = "http://localhost:8000"
 passed = 0
 failed = 0
 results = []
@@ -26,7 +26,7 @@ def fail(name, err):
     failed += 1
     print(f"  ✗ {name} — {err}")
 
-
+xxxxxxxxxxxxxxxxxxxdfdddddddddffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffxdfdgdddddddddddddddddddddddddddddxddxxxxxxxddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddx            xxxxxxxxxxxxxxxxxzdxxxxxxxxxxxxxxxxxxxxxxxxxvghd
 async def main():
     global passed, failed
 

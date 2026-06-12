@@ -299,62 +299,92 @@ async def _run_voice_session(
                                     session.transcript_buffer += " " + content
 
                                 # Server-side auto-evaluation during review mode
-                                # If the LLM didn't call evaluate_answer, we do it here
-                                # Wait briefly to give the LLM a chance to call evaluate_answer first
+                                # Accumulate speech fragments before evaluating
                                 if session.review_awaiting_answer and content.strip():
-                                    async def _delayed_auto_eval(text: str):
-                                        """Wait, then auto-eval if LLM hasn't called evaluate_answer."""
-                                        await asyncio.sleep(3.0)  # Give LLM 3 seconds to call evaluate_answer
-                                        if not session.review_awaiting_answer:
-                                            return  # LLM called evaluate_answer — skip
-                                        try:
-                                            eval_result = await manager.server_side_evaluate(session, text)
-                                            if eval_result:
-                                                score = eval_result.get("score", "")
-                                                feedback = eval_result.get("feedback", "")
-                                                correct_answer = eval_result.get("correct_answer", "")
+                                    # Skip fragments during cooldown (prevents bleed from previous answer)
+                                    cooldown = getattr(session, '_eval_cooldown_until', 0)
+                                    if time.monotonic() < cooldown:
+                                        pass  # Ignore late-arriving fragment
+                                    else:
+                                        # Append to answer buffer
+                                        if not hasattr(session, '_answer_buffer'):
+                                            session._answer_buffer = ""
+                                        session._answer_buffer = (session._answer_buffer + " " + content).strip()
 
-                                                if score == "correct":
-                                                    msg_parts = [feedback or "Correct!"]
-                                                else:
-                                                    msg_parts = [feedback or "Not quite."]
-                                                    if correct_answer:
-                                                        msg_parts.append(f"The answer is: {correct_answer}")
+                                        # Cancel any pending auto-eval timer
+                                        if hasattr(session, '_auto_eval_task') and session._auto_eval_task and not session._auto_eval_task.done():
+                                            session._auto_eval_task.cancel()
 
-                                                if eval_result.get("done"):
-                                                    reviewed = eval_result.get("reviewed_count", 0)
-                                                    correct_count = eval_result.get("correct_count", 0)
-                                                    msg_parts.append(f"Review complete! You got {correct_count} out of {reviewed} correct.")
-                                                elif eval_result.get("next_question"):
-                                                    nq = eval_result["next_question"]
-                                                    msg_parts.append(f"Next question: {nq['question_text']}")
+                                        async def _delayed_auto_eval():
+                                            """Wait for silence, then auto-eval the accumulated answer."""
+                                            await asyncio.sleep(5.0)  # Wait 5s of silence
+                                            if not session.review_awaiting_answer:
+                                                return  # LLM already called evaluate_answer
+                                            accumulated = getattr(session, '_answer_buffer', '').strip()
+                                            session._answer_buffer = ""  # Clear buffer
+                                            if not accumulated:
+                                                return
+                                            try:
+                                                eval_result = await manager.server_side_evaluate(session, accumulated)
+                                                if eval_result:
+                                                    score = eval_result.get("score", "")
+                                                    feedback = eval_result.get("feedback", "")
+                                                    correct_answer = eval_result.get("correct_answer", "")
 
-                                                inject_text = " ".join(msg_parts)
-                                                inject_msg = {
-                                                    "type": "InjectAgentMessage",
-                                                    "message": inject_text,
-                                                }
-                                                await deepgram_ws.send(json.dumps(inject_msg))
-                                                logger.info(f"Auto-eval injected: score={score}, done={eval_result.get('done')}")
+                                                    # Build natural spoken message
+                                                    msg_parts = []
+                                                    if eval_result.get("retry_question"):
+                                                        # Teaching mode: explain and re-ask
+                                                        if score == "partial":
+                                                            msg_parts.append(f"Almost there! {feedback}")
+                                                        else:
+                                                            msg_parts.append(f"Not quite. {feedback}")
+                                                        msg_parts.append(f"The key point is: {correct_answer}.")
+                                                        msg_parts.append("Can you explain that back to me in your own words?")
+                                                    elif score == "wrong":
+                                                        msg_parts.append(f"Not quite. {feedback}")
+                                                        msg_parts.append(f"The answer is: {correct_answer}.")
+                                                    elif score == "partial":
+                                                        msg_parts.append(f"Partially right. {feedback}")
+                                                    elif score == "correct":
+                                                        msg_parts.append(feedback or "That's right!")
+                                                    else:
+                                                        msg_parts.append(feedback or "Let me check that.")
 
-                                                try:
-                                                    await websocket.send_json({
-                                                        "type": "function_result",
-                                                        "name": "evaluate_answer",
-                                                        "result": eval_result,
-                                                        "auto_evaluated": True,
-                                                    })
-                                                except Exception:
-                                                    pass
-                                        except Exception as e:
-                                            logger.error(f"Server-side auto-eval failed: {e}")
+                                                    if eval_result.get("done"):
+                                                        reviewed = eval_result.get("reviewed_count", 0)
+                                                        correct_count = eval_result.get("correct_count", 0)
+                                                        msg_parts.append(f"Review complete! You got {correct_count} out of {reviewed} correct.")
+                                                    elif eval_result.get("next_question") and not eval_result.get("retry_question"):
+                                                        nq = eval_result["next_question"]
+                                                        msg_parts.append(f"Next question: {nq['question_text']}")
 
-                                    asyncio.create_task(_delayed_auto_eval(content))
+                                                    inject_text = " ".join(msg_parts)
+                                                    inject_msg = {
+                                                        "type": "InjectAgentMessage",
+                                                        "message": inject_text,
+                                                    }
+                                                    await deepgram_ws.send(json.dumps(inject_msg))
+                                                    logger.info(f"Auto-eval injected: score={score}, done={eval_result.get('done')}")
+
+                                                    try:
+                                                        await websocket.send_json({
+                                                            "type": "function_result",
+                                                            "name": "evaluate_answer",
+                                                            "result": eval_result,
+                                                            "auto_evaluated": True,
+                                                        })
+                                                    except Exception:
+                                                        pass
+                                            except Exception as e:
+                                                logger.error(f"Server-side auto-eval failed: {e}")
+
+                                        session._auto_eval_task = asyncio.create_task(_delayed_auto_eval())
 
                             try:
                                 await websocket.send_json({
                                     "type": "transcript",
-                                    "role": role,
+                                    "role": "agent" if role != "user" else "user",
                                     "text": content,
                                 })
                             except Exception:
@@ -470,5 +500,5 @@ async def _run_voice_session(
 
         logger.info(
             f"Voice session {session.session_id} ended: "
-            f"mode={session.mode}, duration={int(time.monotonic() - session.started_at)}s"
+            f"workflow={session.active_workflow}, duration={int(time.monotonic() - session.started_at)}s"
         )

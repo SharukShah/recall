@@ -1051,11 +1051,11 @@ None. Chrome Extension APIs are browser-native. No npm packages.
 
 ### Extension Components
 
-- **`manifest.json`** — Manifest V3: `permissions: ["contextMenus", "storage", "notifications"]`, `host_permissions: ["http://localhost:8001/*"]` (configurable via options), content_scripts for all URLs
+- **`manifest.json`** — Manifest V3: `permissions: ["contextMenus", "storage", "notifications"]`, `host_permissions: ["http://localhost:8000/*"]` (configurable via options), content_scripts for all URLs
 - **`background.js`** — Service worker: creates context menu item "Capture to ReCall", handles clicks, sends API request, manages auth token from storage
 - **`content.js`** — Content script: captures `window.getSelection()`, sends to background via `chrome.runtime.sendMessage()`, shows inline toast notification ("Captured! 3 facts extracted")
 - **`popup.html/js`** — Small popup: shows "Connected to ReCall" status, recent captures today count, "Settings" link. If no token configured, shows token input form.
-- **`options.html/js`** — Full settings page: API URL (default `http://localhost:8001`), auth token input, "Test Connection" button
+- **`options.html/js`** — Full settings page: API URL (default `http://localhost:8000`), auth token input, "Test Connection" button
 
 ### Decision Logic
 
@@ -1065,7 +1065,7 @@ None. Chrome Extension APIs are browser-native. No npm packages.
 - **Content script permissions:** Runs on all URLs (`<all_urls>`) but only activates on right-click → context menu. No persistent content script running on every page.
 - **Offline handling:** If backend is unreachable, store the capture in `chrome.storage.local` and retry when connection resumes (up to 10 queued items).
 - **No bundler:** Plain JavaScript (no TypeScript, no webpack). Extension is <200 lines total. Keep it dead simple.
-- **Host permissions:** Default to `http://localhost:8001/*`. User can change in options page for deployed instances (e.g., `https://recall.example.com/*`).
+- **Host permissions:** Default to `http://localhost:8000/*`. User can change in options page for deployed instances (e.g., `https://recall.example.com/*`).
 - **Error: No text selected** → Context menu handler checks `selectionText`. If empty, show notification "No text selected."
 - **Error: API request fails** → Show notification "Capture failed. Check connection settings."
 - **Alternative rejected: Firefox extension** — Chrome-first. Firefox WebExtension API is similar; can be ported later with minimal changes.
@@ -1102,17 +1102,17 @@ Docker Compose Architecture:
 │
 ├─ Service: backend
 │   ├─ Build: backend/Dockerfile
-│   ├─ Port: 8001
+│   ├─ Port: 8000
 │   ├─ Depends on: postgres (healthy)
 │   ├─ Environment: DATABASE_URL, OPENAI_API_KEY, AUTH_SECRET_KEY, etc.
-│   ├─ Healthcheck: curl http://localhost:8001/
-│   └─ Command: uvicorn main:app --host 0.0.0.0 --port 8001
+│   ├─ Healthcheck: curl http://localhost:8000/
+│   └─ Command: uvicorn main:app --host 0.0.0.0 --port 8000
 │
 └─ Service: frontend
     ├─ Build: frontend/Dockerfile
     ├─ Port: 3000
     ├─ Depends on: backend (healthy)
-    ├─ Environment: NEXT_PUBLIC_API_URL=http://backend:8001
+    ├─ Environment: NEXT_PUBLIC_API_URL=http://backend:8000
     └─ Command: node server.js (production Next.js)
 ```
 
@@ -1165,8 +1165,8 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY . .
-EXPOSE 8001
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
 #### `frontend/Dockerfile`
@@ -1219,7 +1219,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "${BACKEND_PORT:-8001}:8001"
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-recall}:${POSTGRES_PASSWORD}@postgres:5432/recall_mvp
       OPENAI_API_KEY: ${OPENAI_API_KEY:?Set OPENAI_API_KEY}
@@ -1232,7 +1232,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -1242,11 +1242,11 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       SENTRY_DSN_FRONTEND: ${SENTRY_DSN_FRONTEND:-}
     depends_on:
       backend:
@@ -1271,7 +1271,7 @@ services:
       target: builder
     volumes:
       - ./backend:/app
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     environment:
       ENV: development
 

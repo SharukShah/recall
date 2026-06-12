@@ -30,12 +30,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("focus", onFocus);
   }, [loadDueCount]);
 
+  useEffect(() => {
+    const onReviewCompleted = () => setDueCount((c) => Math.max(0, c - 1));
+    window.addEventListener("review-completed", onReviewCompleted);
+    return () => window.removeEventListener("review-completed", onReviewCompleted);
+  }, []);
+
   return (
     <>
       <div className="flex min-h-screen">
         <DesktopSidebar dueCount={dueCount} />
         <main className="flex-1 pb-20 md:pb-0 md:ml-60">
-          <div className="mx-auto max-w-2xl px-4 py-6 md:py-8">
+          <div className="mx-auto max-w-4xl px-4 py-6 md:px-6 md:py-8">
             {children}
           </div>
         </main>

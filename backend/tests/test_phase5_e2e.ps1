@@ -1,7 +1,7 @@
 ## Phase 5 E2E Tests
 ## Tests: Push Notifications, Method of Loci, Knowledge Graph, Analytics
 
-$base = "http://localhost:8001"
+$base = "http://localhost:8000"
 $pass = 0
 $fail = 0
 $results = @()

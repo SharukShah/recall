@@ -1,7 +1,6 @@
 "use client";
 
 import { Pencil, Trash2, CalendarClock } from "lucide-react";
-import { truncateText } from "@/lib/utils";
 import { deleteQuestion, rescheduleQuestion } from "@/lib/api";
 import type { QuestionListItem } from "@/types/api";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +17,10 @@ interface QuestionRowProps {
 
 const typeColors: Record<string, string> = {
   recall: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  cloze: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
+  explain_back: "bg-purple-500/15 text-purple-600 dark:text-purple-400",
   explain: "bg-green-500/15 text-green-600 dark:text-green-400",
-  connection: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+  apply: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  connect: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
 };
 
 const stateConfig: Record<number, { label: string; className: string }> = {
@@ -78,7 +78,7 @@ export function QuestionRow({ question, selected, onToggleSelect, onClickDetail,
 
   return (
     <div
-      className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer"
+      className="group flex items-start gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer"
       onClick={() => onClickDetail(question.id)}
     >
       <input
@@ -89,26 +89,36 @@ export function QuestionRow({ question, selected, onToggleSelect, onClickDetail,
           onToggleSelect(question.id);
         }}
         onClick={(e) => e.stopPropagation()}
-        className="h-4 w-4 rounded border-input shrink-0"
+        className="h-4 w-4 rounded border-input shrink-0 mt-1"
       />
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium leading-relaxed line-clamp-1">
-          {truncateText(question.question_text, 80)}
+        <p className="text-sm font-medium leading-relaxed line-clamp-2">
+          {question.question_text}
         </p>
-        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+        <div className="flex flex-wrap items-center gap-2 mt-2">
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border-0 ${typeColor}`}>
-            {question.question_type}
+            {question.question_type === "explain_back" ? "explain back" : question.question_type}
           </span>
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border-0 ${state.className}`}>
             {state.label}
           </span>
-          <span className={`text-xs ${due.className}`}>{due.text}</span>
-          <span className="text-xs text-muted-foreground">{question.review_count} reviews</span>
+        </div>
+
+        {/* Schedule & Performance row */}
+        <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
+          <span className={due.className}>
+            <CalendarClock className="inline h-3 w-3 mr-0.5 -mt-0.5" />
+            {due.text}
+          </span>
+          <span>{question.review_count} review{question.review_count !== 1 ? "s" : ""}</span>
           {question.last_rating && (
-            <span className={`text-xs font-medium ${ratingColor}`}>
+            <span className={`font-medium ${ratingColor}`}>
               Last: {["", "Again", "Hard", "Good", "Easy"][question.last_rating]}
             </span>
+          )}
+          {question.stability !== undefined && question.stability !== null && (
+            <span>Stability: {question.stability < 1 ? `${Math.round(question.stability * 24)}h` : `${Math.round(question.stability)}d`}</span>
           )}
         </div>
       </div>

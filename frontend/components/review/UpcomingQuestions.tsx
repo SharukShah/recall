@@ -11,9 +11,9 @@ interface UpcomingQuestionsProps {
 }
 
 export function UpcomingQuestions({ questions, currentIndex }: UpcomingQuestionsProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
-  const upcoming = questions.slice(currentIndex + 1, currentIndex + 4);
+  const upcoming = questions.slice(currentIndex + 1, currentIndex + 6);
 
   if (upcoming.length === 0) return null;
 

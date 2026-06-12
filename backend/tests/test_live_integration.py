@@ -1,6 +1,6 @@
 """
 Live integration test: capture → review → evaluate full cycle.
-Requires the backend running at http://localhost:8001.
+Requires the backend running at http://localhost:8000.
 Tests against the real database and API.
 """
 import asyncio
@@ -8,7 +8,7 @@ import json
 import sys
 import httpx
 
-BASE = "http://localhost:8001"
+BASE = "http://localhost:8000"
 
 
 async def main():
@@ -262,7 +262,7 @@ async def main():
             # but we can verify the endpoint responds to upgrade
             import websockets
             try:
-                async with websockets.connect("ws://localhost:8001/ws/voice") as ws:
+                async with websockets.connect("ws://localhost:8000/ws/voice") as ws:
                     # If we get here, the endpoint accepted the connection
                     print(f"  PASS: WebSocket connected")
                     passed += 1

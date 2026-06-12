@@ -93,7 +93,7 @@
 4. **Test Backend:**
    ```bash
    cd backend
-   python -m uvicorn main:app --host 0.0.0.0 --port 8001
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000
    ```
 
 5. **Complete Remaining Features:**
@@ -113,7 +113,7 @@
 ### Method of Loci (Backend Only)
 Test via API:
 ```bash
-curl -X POST http://localhost:8001/api/loci/create \
+curl -X POST http://localhost:8000/api/loci/create \
   -H "Content-Type: application/json" \
   -d '{
     "items": ["HTTP", "TCP", "DNS"],

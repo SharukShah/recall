@@ -26,7 +26,7 @@ CREATE TABLE questions (
     extracted_point_id UUID NOT NULL REFERENCES extracted_points(id) ON DELETE CASCADE,
     question_text TEXT NOT NULL,
     answer_text TEXT NOT NULL,
-    question_type TEXT NOT NULL, -- 'recall' | 'cloze' | 'explain' | 'connect' | 'apply'
+    question_type TEXT NOT NULL, -- 'recall' | 'explain_back' | 'explain' | 'connect' | 'apply'
     technique_used TEXT,
     mnemonic_hint TEXT,
 

@@ -2,7 +2,7 @@
 
 **Date:** April 19, 2026  
 **Frontend:** http://localhost:3000  
-**Backend:** http://localhost:8001
+**Backend:** http://localhost:8000
 
 ---
 
@@ -189,7 +189,7 @@ The fixes above should resolve the crashes, but you need to test each page manua
 **Fix:** Apply migration: `psql -U postgres -d recall_mvp -f backend/migration_phase5.sql`
 
 ### Issue: CORS Errors
-**Symptom:** Browser blocks requests from localhost:3000 to localhost:8001  
+**Symptom:** Browser blocks requests from localhost:3000 to localhost:8000  
 **Fix:** Already configured in backend/main.py (should work)
 
 ---

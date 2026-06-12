@@ -54,7 +54,11 @@ QUESTIONS = [
 
 
 def mgr():
-    return VoiceSessionManager(MagicMock(), MagicMock(), MagicMock())
+    m = VoiceSessionManager(MagicMock(), MagicMock(), MagicMock())
+    # By default, _reload_due_questions returns False (no more due)
+    # Tests that need reload behavior can override this
+    m._reload_due_questions = AsyncMock(return_value=False)
+    return m
 
 
 def eval_resp(correct=True):
@@ -709,11 +713,9 @@ async def test_s10_2_full_cycle_3_questions():
 
 
 async def test_s10_3_mixed_correct_incorrect():
-    """Mix of correct and incorrect answers tracked properly."""
+    """Wrong first attempt -> teach + retry; second attempt -> advance."""
     m = mgr()
     s = UnifiedVoiceSession()
-
-    answers = [True, False, True]  # correct, wrong, correct
 
     with patch("services.voice_service.ReviewService") as MockRS:
         MockRS.return_value.get_due = AsyncMock(
@@ -724,15 +726,43 @@ async def test_s10_3_mixed_correct_incorrect():
         sr = json.loads(await m.handle_function_call(s, "start_review_session", {"recent_only": False}))
         qid = sr["first_question"]["question_id"]
 
-        for i, correct in enumerate(answers):
-            MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(correct))
-            r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
-                "question_id": qid, "user_answer": f"Answer {i+1}",
-            }))
-            if not r.get("done"):
-                qid = r["next_question"]["question_id"]
+        # Q1: correct -> advances
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(True))
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": qid, "user_answer": "Answer 1",
+        }))
+        assert r.get("done") == False
+        assert "next_question" in r
+        qid = r["next_question"]["question_id"]
 
-    assert s.review_correct == 2  # 2 correct out of 3
+        # Q2 first try: wrong -> teach + retry (same question)
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(False))
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": qid, "user_answer": "Wrong answer",
+        }))
+        assert r.get("score") == "wrong"
+        assert r.get("done") == False
+        assert "retry_question" in r
+        assert r["retry_question"]["question_id"] == qid
+        assert "next_question" not in r
+
+        # Q2 second try: still wrong -> teaches and advances to Q3
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": qid, "user_answer": "Still wrong",
+        }))
+        assert r.get("done") == False
+        assert "next_question" in r  # advances after 2nd attempt
+        assert "retry_question" not in r
+        qid = r["next_question"]["question_id"]
+
+        # Q3: correct -> done
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(True))
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": qid, "user_answer": "Answer 3",
+        }))
+        assert r.get("done") == True
+
+    assert s.review_correct == 2  # Q1 + Q3 correct
     assert s.reviewed_count == 3
     print("  PASS")
 
@@ -767,6 +797,175 @@ async def test_s10_4_auto_eval_full_cycle():
     assert s.reviewed_count == 3
     assert s.active_workflow is None
     assert s.review_awaiting_answer == False
+    print("  PASS")
+
+
+async def test_s10_5_wrong_answer_teaches_and_retries_via_auto_eval():
+    """Wrong via auto-eval -> teach + retry; second wrong -> advance."""
+    m = mgr()
+    s = UnifiedVoiceSession()
+
+    with patch("services.voice_service.ReviewService") as MockRS:
+        MockRS.return_value.get_due = AsyncMock(
+            return_value=DueResponse(questions=QUESTIONS, total_due=3)
+        )
+        MockRS.return_value.rate = AsyncMock()
+
+        sr = json.loads(await m.handle_function_call(s, "start_review_session", {"recent_only": False}))
+        qid = sr["first_question"]["question_id"]
+
+        # First attempt: wrong -> retry same question
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(False))
+        result = await m.server_side_evaluate(s, "Some wrong answer here")
+        assert result is not None
+        assert result.get("score") == "wrong"
+        assert result.get("done") == False
+        assert "retry_question" in result
+        assert result["retry_question"]["question_id"] == qid
+        assert s.review_awaiting_answer == True
+        assert s.review_current_question_id == qid  # same question
+
+        # Second attempt: still wrong -> advances
+        result = await m.server_side_evaluate(s, "Another wrong answer")
+        assert result is not None
+        assert result.get("done") == False
+        assert "next_question" in result
+        assert s.review_current_question_id != qid  # moved to next
+    print("  PASS")
+
+
+# =====================================================================
+# SCENARIO 11: SERVER-SIDE ENFORCEMENT
+# =====================================================================
+
+async def test_s11_1_block_capture_during_review():
+    """finish_capture during active review → blocked with error."""
+    m = mgr()
+    s = UnifiedVoiceSession()
+    load_session_with_questions(s)
+
+    r = json.loads(await m.handle_function_call(s, "finish_capture", {
+        "final_transcript": "Some captured text",
+    }))
+    assert "error" in r
+    assert "review" in r["error"].lower()
+    assert "instruction" in r  # should tell LLM to continue review
+    # Session should still be in review mode
+    assert s.active_workflow == "review"
+    assert s.review_awaiting_answer == True
+    print("  PASS")
+
+
+async def test_s11_2_block_save_why_during_review():
+    """save_why_it_matters during active review → blocked."""
+    m = mgr()
+    s = UnifiedVoiceSession()
+    load_session_with_questions(s)
+    s.last_capture_id = str(uuid.uuid4())
+
+    r = json.loads(await m.handle_function_call(s, "save_why_it_matters", {
+        "capture_id": s.last_capture_id,
+        "why_it_matters": "Interview prep",
+    }))
+    assert "error" in r
+    assert "review" in r["error"].lower()
+    print("  PASS")
+
+
+async def test_s11_3_capture_allowed_after_review():
+    """finish_capture after review ends → allowed normally."""
+    m = mgr()
+    s = UnifiedVoiceSession()
+    load_session_with_questions(s, [QUESTIONS[0]])  # 1 question
+
+    with patch("services.voice_service.ReviewService") as MockRS:
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(True))
+        MockRS.return_value.rate = AsyncMock()
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": QUESTIONS[0].question_id,
+            "user_answer": "Correct answer",
+        }))
+        assert r["done"] == True
+        assert s.active_workflow is None  # review ended
+
+    # Now capture should work
+    mock_resp = MagicMock()
+    mock_resp.capture_id = str(uuid.uuid4())
+    mock_resp.facts_count = 2
+    mock_resp.questions_count = 3
+    mock_resp.status = "processed"
+
+    with patch("services.voice_service.CaptureService") as MockCS:
+        MockCS.return_value.process = AsyncMock(return_value=mock_resp)
+        r = json.loads(await m.handle_function_call(s, "finish_capture", {
+            "final_transcript": "Some knowledge to capture.",
+        }))
+    assert "capture_id" in r
+    assert "error" not in r
+    print("  PASS")
+
+
+async def test_s11_4_retry_sets_longer_cooldown():
+    """Wrong answer retry sets a longer cooldown (>4s) to block late fragments."""
+    import time
+    m = mgr()
+    s = UnifiedVoiceSession()
+    load_session_with_questions(s)
+
+    with patch("services.voice_service.ReviewService") as MockRS:
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(False))
+        MockRS.return_value.rate = AsyncMock()
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": QUESTIONS[0].question_id,
+            "user_answer": "Wrong answer",
+        }))
+    assert "retry_question" in r
+    # Retry should set a long cooldown (>= 10s)
+    cooldown_remaining = s._eval_cooldown_until - time.monotonic()
+    assert cooldown_remaining > 8.0, f"Retry cooldown too short: {cooldown_remaining:.1f}s"
+    print("  PASS")
+
+
+async def test_s11_5_auto_reload_on_batch_end():
+    """When batch ends but more questions are due, auto-continue instead of done."""
+    m = mgr()
+    s = UnifiedVoiceSession()
+    load_session_with_questions(s, [QUESTIONS[0]])  # 1 question batch
+
+    extra_q = ReviewQuestion(
+        question_id=str(uuid.uuid4()),
+        question_text="What is FSRS?",
+        question_type="recall",
+        mnemonic_hint="Spaced repetition",
+        technique_used="active_recall",
+    )
+
+    # Mock _reload_due_questions to add a new question
+    async def fake_reload(session):
+        session.review_queue.append({
+            "question_id": extra_q.question_id,
+            "question_text": extra_q.question_text,
+            "question_type": extra_q.question_type,
+            "mnemonic_hint": extra_q.mnemonic_hint,
+            "technique_used": extra_q.technique_used,
+        })
+        return True
+    m._reload_due_questions = fake_reload
+
+    with patch("services.voice_service.ReviewService") as MockRS:
+        MockRS.return_value.evaluate_answer = AsyncMock(return_value=eval_resp(True))
+        MockRS.return_value.rate = AsyncMock()
+        r = json.loads(await m.handle_function_call(s, "evaluate_answer", {
+            "question_id": QUESTIONS[0].question_id,
+            "user_answer": "Correct answer",
+        }))
+
+    # Should NOT be done — reloaded more questions
+    assert r["done"] == False
+    assert "next_question" in r
+    assert r["next_question"]["question_id"] == extra_q.question_id
+    assert s.review_awaiting_answer == True
+    assert s.active_workflow == "review"
     print("  PASS")
 
 
@@ -830,6 +1029,14 @@ async def main():
             ("S10.2 Full 3-question cycle", test_s10_2_full_cycle_3_questions),
             ("S10.3 Mixed correct/incorrect", test_s10_3_mixed_correct_incorrect),
             ("S10.4 Full cycle via auto-eval only", test_s10_4_auto_eval_full_cycle),
+            ("S10.5 Wrong teaches retries then advances via auto-eval", test_s10_5_wrong_answer_teaches_and_retries_via_auto_eval),
+        ]),
+        ("S11: SERVER-SIDE ENFORCEMENT", [
+            ("S11.1 Block capture during review", test_s11_1_block_capture_during_review),
+            ("S11.2 Block save_why during review", test_s11_2_block_save_why_during_review),
+            ("S11.3 Capture allowed after review", test_s11_3_capture_allowed_after_review),
+            ("S11.4 Retry sets longer cooldown", test_s11_4_retry_sets_longer_cooldown),
+            ("S11.5 Auto-reload on batch end", test_s11_5_auto_reload_on_batch_end),
         ]),
     ]
 

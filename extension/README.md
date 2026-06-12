@@ -32,7 +32,7 @@ Chrome extension for capturing highlighted text from any webpage directly to you
 1. Click the ReCall extension icon in your toolbar
 2. Click "Open Settings" (or right-click the icon → Options)
 3. Configure:
-   - **API URL**: Where your backend is running (default: `http://localhost:8001`)
+   - **API URL**: Where your backend is running (default: `http://localhost:8000`)
    - **Auth Token**: Your API token (leave empty if auth is disabled)
 4. Click "Save Settings"
 5. Click "Test Connection" to verify

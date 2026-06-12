@@ -32,6 +32,8 @@ type ReviewAction =
   | { type: "START_RATE" }
   | { type: "RATE_SUCCESS"; rating: 1 | 2 | 3 | 4; schedule: RateResponse }
   | { type: "ADVANCE_QUESTION" }
+  | { type: "SKIP_QUESTION" }
+  | { type: "RETRY_QUESTION" }
   | { type: "RATE_ERROR"; error: string }
   | { type: "END_SESSION" }
   | { type: "SET_ERROR"; error: string };
@@ -102,6 +104,30 @@ function reducer(state: ReviewSessionState, action: ReviewAction): ReviewSession
         ...state,
         currentIndex: isComplete ? state.currentIndex : nextIndex,
         phase: isComplete ? "complete" : "question",
+        currentAnswer: "",
+        evaluation: null,
+        lastSchedule: null,
+        error: null,
+      };
+    }
+    case "SKIP_QUESTION": {
+      const nextIdx = state.currentIndex + 1;
+      const done = nextIdx >= state.questions.length;
+      return {
+        ...state,
+        currentIndex: done ? state.currentIndex : nextIdx,
+        phase: done ? "complete" : "question",
+        currentAnswer: "",
+        evaluation: null,
+        lastSchedule: null,
+        error: null,
+      };
+    }
+    case "RETRY_QUESTION": {
+      // Go back to question phase on the SAME question for re-attempt after teaching
+      return {
+        ...state,
+        phase: "question",
         currentAnswer: "",
         evaluation: null,
         lastSchedule: null,
@@ -196,6 +222,7 @@ export function useReviewSession(focusCategories?: string[]) {
           ai_feedback: state.evaluation?.feedback,
         });
         dispatch({ type: "RATE_SUCCESS", rating, schedule });
+        window.dispatchEvent(new CustomEvent("review-completed"));
       } catch (err) {
         dispatch({
           type: "RATE_ERROR",
@@ -207,6 +234,23 @@ export function useReviewSession(focusCategories?: string[]) {
     },
     [state.questions, state.currentIndex, state.currentAnswer, state.evaluation]
   );
+
+  const skipQuestion = useCallback(() => {
+    // Skip = rate as Easy (4) since user already knows it
+    const question = state.questions[state.currentIndex];
+    if (question) {
+      rateQuestion({
+        question_id: question.question_id,
+        rating: 4,
+      }).catch(() => {}); // fire-and-forget
+    }
+    dispatch({ type: "SKIP_QUESTION" });
+    window.dispatchEvent(new CustomEvent("review-completed"));
+  }, [state.questions, state.currentIndex]);
+
+  const retryQuestion = useCallback(() => {
+    dispatch({ type: "RETRY_QUESTION" });
+  }, []);
 
   const endSession = useCallback(() => {
     dispatch({ type: "END_SESSION" });
@@ -220,6 +264,8 @@ export function useReviewSession(focusCategories?: string[]) {
     setAnswer,
     checkAnswer,
     submitRating,
+    skipQuestion,
+    retryQuestion,
     endSession,
     retryLoad: loadQuestions,
   };

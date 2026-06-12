@@ -16,7 +16,7 @@ from config import settings
 from db import _init_connection
 from services.voice_service import VoiceSessionManager, UnifiedVoiceSession
 
-BASE = "http://localhost:8001"
+BASE = "http://localhost:8000"
 
 
 async def main():
@@ -325,7 +325,7 @@ async def main():
     try:
         import websockets
         try:
-            async with websockets.connect("ws://localhost:8001/ws/voice") as ws:
+            async with websockets.connect("ws://localhost:8000/ws/voice") as ws:
                 print(f"  PASS: WebSocket connected")
                 passed += 1
         except websockets.exceptions.ConnectionClosed as e:

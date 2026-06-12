@@ -35,25 +35,26 @@ export function VoiceTranscript({ entries, className }: VoiceTranscriptProps) {
     <div
       ref={scrollRef}
       className={cn(
-        "rounded-lg border border-border bg-card overflow-y-auto max-h-64 p-3 space-y-2",
+        "rounded-lg border border-border bg-card overflow-y-auto max-h-[60vh] p-4 space-y-3",
         className,
       )}
     >
-      {entries.map((entry, i) => (
-        <div key={i} className="flex gap-2 text-sm">
-          <span
-            className={cn(
-              "font-semibold shrink-0",
-              entry.role === "agent"
-                ? "text-primary"
-                : "text-foreground",
-            )}
-          >
-            {entry.role === "agent" ? "Agent:" : "You:"}
-          </span>
-          <span className="text-foreground/90">{entry.text}</span>
-        </div>
-      ))}
+      {entries.map((entry, i) => {
+        const isAgent = entry.role === "agent" || entry.role === "assistant";
+        return (
+          <div key={i} className={cn("flex gap-2 text-sm rounded-lg px-3 py-2", isAgent ? "bg-primary/5" : "bg-muted/50")}>
+            <span
+              className={cn(
+                "font-semibold shrink-0",
+                isAgent ? "text-primary" : "text-foreground",
+              )}
+            >
+              {isAgent ? "ReCall:" : "You:"}
+            </span>
+            <span className="text-foreground/90">{entry.text}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

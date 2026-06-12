@@ -508,3 +508,513 @@ A: A keyword that allows modifying a variable from an enclosing (outer) function
 
 **Q: How do you sort by a custom key in Python?**
 A: `sorted(items, key=lambda x: x[1])` sorts by the second element. The `key` function extracts the comparison value from each item.
+
+---
+
+## Section 30: Context Managers
+
+**Q: What is a context manager in Python?**
+A: A context manager is an object that sets things up and cleans things up automatically using the `with` statement. The most common example is file handling: `with open("file.txt") as f:` — it automatically closes the file when the block ends, even if an error happens. Think of it as: "set up → do work → guaranteed cleanup."
+
+**Q: How do you write a custom context manager using a class?**
+A: Implement two dunder methods: `__enter__()` (runs when entering the `with` block — returns the resource) and `__exit__()` (runs when leaving — handles cleanup). Example:
+```python
+class MyDB:
+    def __enter__(self):
+        self.conn = create_connection()
+        return self.conn
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.conn.close()
+        return False  # Don't suppress exceptions
+
+with MyDB() as conn:
+    conn.execute("SELECT ...")
+# conn.close() is called automatically
+```
+
+**Q: How do you create a context manager using `@contextmanager`?**
+A: Use `from contextlib import contextmanager` and write a generator function with exactly one `yield`. Everything before `yield` is the setup, everything after is the cleanup:
+```python
+from contextlib import contextmanager
+
+@contextmanager
+def open_file(path):
+    f = open(path)
+    try:
+        yield f       # this is what `as f` receives
+    finally:
+        f.close()     # cleanup always runs
+
+with open_file("data.txt") as f:
+    print(f.read())
+```
+This is simpler than writing a whole class with `__enter__`/`__exit__`.
+
+---
+
+## Section 31: Multithreading, Multiprocessing & AsyncIO
+
+**Q: What is the difference between multithreading and multiprocessing?**
+A: **Threading** = multiple threads in ONE process sharing the same memory. Good for I/O-bound tasks (waiting for network, files, database). BUT the GIL means only one thread runs Python code at a time, so no true parallelism for CPU work.
+**Multiprocessing** = multiple separate processes, each with its own memory and its own GIL. Good for CPU-bound tasks (number crunching, image processing). Achieves true parallelism but uses more memory.
+Rule of thumb: I/O-bound → threading. CPU-bound → multiprocessing.
+
+**Q: What is `async`/`await` and when do you use it?**
+A: `async`/`await` is Python's way of writing asynchronous (non-blocking) code. An `async def` function is called a **coroutine**. Inside it, `await` pauses that function until a result is ready — but instead of blocking the whole program, Python switches to do other work. Best for: making many network requests, handling many database queries, or running a web server that handles many clients at once. Example:
+```python
+import asyncio
+
+async def fetch_data():
+    await asyncio.sleep(1)  # simulates waiting for I/O
+    return "data"
+
+async def main():
+    result = await fetch_data()
+    print(result)
+
+asyncio.run(main())
+```
+
+**Q: When would you use threading vs multiprocessing vs asyncio?**
+A: 
+- **threading**: Multiple I/O tasks that block (file reads, simple HTTP requests) — easy to use
+- **asyncio**: Thousands of I/O tasks (web scraping, API servers, chat servers) — most scalable for I/O
+- **multiprocessing**: CPU-heavy work (data processing, math, image manipulation) — only way to bypass the GIL
+
+**Q: What is `concurrent.futures` and why is it useful?**
+A: It's a high-level module that gives you `ThreadPoolExecutor` and `ProcessPoolExecutor` — simple interfaces to run tasks in threads or processes without managing them manually:
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+with ThreadPoolExecutor(max_workers=5) as pool:
+    results = pool.map(fetch_url, list_of_urls)
+```
+Much easier than creating threads/processes by hand.
+
+---
+
+## Section 32: Memory Management & Garbage Collection
+
+**Q: How does Python manage memory internally?**
+A: Python has a **private heap** — all objects and data structures live there. The programmer cannot access this heap directly. Python's **memory manager** handles allocation and deallocation. Small objects (≤512 bytes) are managed by a special allocator called **pymalloc** that reuses small memory blocks for speed.
+
+**Q: What is Python's garbage collector and how does it work?**
+A: Python uses two mechanisms: 
+1. **Reference counting** (primary): Every object has a counter tracking how many references point to it. When the count drops to 0, the object is immediately freed. Example: `a = [1,2]; a = None` → list's reference count goes from 1 to 0 → freed.
+2. **Cyclic garbage collector** (backup): Handles circular references (A points to B, B points to A — both have ref count > 0 but are unreachable). The `gc` module periodically detects and cleans these cycles.
+
+**Q: What is a memory leak in Python and how do you prevent it?**
+A: A memory leak happens when objects stay in memory longer than needed because something still references them. Common causes: global lists that keep growing, circular references, forgotten event listeners, caching without limits. Prevention: use weak references (`weakref`), set size limits on caches, use context managers for resources, profile with `tracemalloc` module.
+
+**Q: How do you check how many references point to an object?**
+A: Use `sys.getrefcount(obj)`. Note: the count is always one higher than expected because passing the object to `getrefcount()` itself creates a temporary reference.
+
+---
+
+## Section 33: Pass by Object Reference
+
+**Q: Are arguments passed by value or by reference in Python?**
+A: **Neither!** Python uses "pass by object reference" (also called "pass by assignment"). What happens depends on whether the object is mutable or immutable:
+- **Immutable** (int, str, tuple): If you reassign inside the function, the original is untouched — it looks like pass-by-value. `def f(x): x = 10` → original unchanged.
+- **Mutable** (list, dict, set): If you mutate in place, the original IS affected — it looks like pass-by-reference. `def f(lst): lst.append(4)` → original list changes.
+The key insight: the function receives a reference to the SAME object. Reassignment creates a new local variable; mutation modifies the shared object.
+
+---
+
+## Section 34: Pickling & Serialization
+
+**Q: What is pickling and unpickling in Python?**
+A: **Pickling** = converting a Python object (list, dict, class instance, etc.) into a byte stream so it can be saved to a file or sent over a network. **Unpickling** = converting that byte stream back into a Python object. Uses the `pickle` module:
+```python
+import pickle
+
+data = {"name": "Sharuk", "scores": [90, 85, 92]}
+# Pickle (save)
+with open("data.pkl", "wb") as f:
+    pickle.dump(data, f)
+# Unpickle (load)
+with open("data.pkl", "rb") as f:
+    loaded = pickle.load(f)
+```
+Warning: Never unpickle data from untrusted sources — it can execute arbitrary code.
+
+**Q: When would you use `pickle` vs `json`?**
+A: Use **JSON** when: you need human-readable format, sharing data with non-Python systems, web APIs. Use **pickle** when: saving complex Python objects (classes, functions), speed matters, data stays within Python. Key difference: JSON handles only basic types (str, int, list, dict). Pickle can serialize almost any Python object but is Python-only and not human-readable.
+
+---
+
+## Section 35: Regular Expressions
+
+**Q: What are the key functions in Python's `re` module?**
+A: 
+- `re.match(pattern, string)` — checks for match only at the **beginning** of the string
+- `re.search(pattern, string)` — scans the **entire** string for the first match
+- `re.findall(pattern, string)` — returns a **list of all matches**
+- `re.sub(pattern, replacement, string)` — replaces all matches
+- `re.split(pattern, string)` — splits string by the pattern
+All return `None` if no match (except `findall` returns `[]` and `split` returns a list).
+
+**Q: What is the difference between `re.match()` and `re.search()`?**
+A: `re.match()` only checks at the START of the string. `re.search()` checks ANYWHERE in the string. Example: `re.match(r"world", "hello world")` → `None` (no match at start). `re.search(r"world", "hello world")` → Match found. Rule: almost always use `re.search()` unless you specifically need to match from the start.
+
+**Q: What are the most common regex patterns to know?**
+A: `\d` = digit (0-9). `\w` = word character (letter, digit, underscore). `\s` = whitespace. `.` = any character except newline. `+` = one or more. `*` = zero or more. `?` = zero or one. `{n}` = exactly n times. `^` = start of string. `$` = end of string. `[abc]` = character set. `(...)` = capture group. `|` = OR.
+
+---
+
+## Section 36: Advanced OOP — `__new__`, MRO, `__slots__`
+
+**Q: What is the difference between `__new__()` and `__init__()`?**
+A: `__new__()` is called FIRST — it creates and returns the new object instance (handles memory allocation). `__init__()` is called SECOND — it initializes the already-created object (sets attributes). Most of the time you only override `__init__`. You override `__new__` for special cases like: implementing singletons, subclassing immutable types (str, int, tuple), or controlling object creation.
+```python
+class Singleton:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+```
+
+**Q: What is MRO (Method Resolution Order)?**
+A: MRO is the order Python follows when looking for a method in a class hierarchy with multiple inheritance. Python uses the **C3 linearization** algorithm. You can see it with `ClassName.__mro__` or `ClassName.mro()`. Example:
+```python
+class A: pass
+class B(A): pass
+class C(A): pass
+class D(B, C): pass
+
+print(D.__mro__)  # D → B → C → A → object
+```
+Python checks D first, then B, then C, then A, then object. This ensures every class appears only once and respects the inheritance order.
+
+**Q: What are `__slots__` and why use them?**
+A: By default, Python objects store attributes in a `__dict__` dictionary — flexible but uses more memory. `__slots__` tells Python to use a fixed set of attributes instead of a dict:
+```python
+class Point:
+    __slots__ = ['x', 'y']
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+```
+Benefits: ~40% less memory per instance, slightly faster attribute access. Drawback: you can't add new attributes dynamically. Use when creating millions of instances of a simple class.
+
+---
+
+## Section 37: Monkey Patching, Walrus Operator, Match/Case
+
+**Q: What is monkey patching in Python?**
+A: Monkey patching = changing or adding methods/attributes to a class or module at runtime, AFTER it's been defined. Example:
+```python
+class Dog:
+    def speak(self):
+        return "Woof"
+
+def new_speak(self):
+    return "Meow"
+
+Dog.speak = new_speak  # monkey patched!
+d = Dog()
+print(d.speak())  # "Meow"
+```
+Used in testing (mocking), quick fixes, and extending third-party code. Dangerous because it makes code harder to debug — use sparingly.
+
+**Q: What is the walrus operator (`:=`) and when would you use it?**
+A: The walrus operator (`:=`, introduced in Python 3.8) assigns a value to a variable AS PART of an expression. It saves you from computing something twice:
+```python
+# Without walrus — calls len() twice or needs extra line
+data = input()
+if len(data) > 10:
+    print(f"Too long: {len(data)}")
+
+# With walrus — compute once, use twice
+if (n := len(data)) > 10:
+    print(f"Too long: {n}")
+```
+Also great in while loops: `while (line := f.readline()): process(line)`.
+
+**Q: What is structural pattern matching (`match`/`case`)?**
+A: Introduced in Python 3.10, it's like a powerful switch-case. It matches values AND can destructure them:
+```python
+def handle(command):
+    match command.split():
+        case ["quit"]:
+            print("Goodbye")
+        case ["go", direction]:
+            print(f"Going {direction}")
+        case ["get", item] if item != "bomb":
+            print(f"Picked up {item}")
+        case _:
+            print("Unknown command")
+```
+The `_` is the wildcard/default case. Unlike simple if/elif chains, it can unpack sequences, match types, and use guard conditions (`if ...`).
+
+---
+
+## Section 38: Tricky Behavior Questions
+
+**Q: What happens with `[[0]] * 3` in Python?**
+A: You get `[[0], [0], [0]]` — but ALL three inner lists are the SAME object! Modifying one modifies all:
+```python
+grid = [[0]] * 3
+grid[0].append(1)
+print(grid)  # [[0, 1], [0, 1], [0, 1]] — all changed!
+```
+The `*` operator copies references, not the objects. Fix: `grid = [[0] for _ in range(3)]` — this creates 3 independent lists.
+
+**Q: Why does `x = x + [1]` behave differently than `x += [1]`?**
+A: `x = x + [1]` creates a brand new list and reassigns `x` to it. The original list is untouched. `x += [1]` calls `__iadd__` which modifies the list IN PLACE (equivalent to `x.extend([1])`). This matters when another variable points to the same list:
+```python
+a = [1, 2]
+b = a
+a = a + [3]   # a is now a NEW list, b is still [1, 2]
+
+a = [1, 2]
+b = a
+a += [3]       # a is modified IN PLACE, b is also [1, 2, 3]
+```
+
+**Q: What is late binding in closures / the lambda-in-loops trap?**
+A: When you create lambdas or closures in a loop, they all share the SAME variable — and they look up its value when CALLED, not when created:
+```python
+funcs = [lambda: i for i in range(3)]
+print([f() for f in funcs])  # [2, 2, 2] — all return 2!
+```
+All lambdas reference `i`, which is 2 after the loop ends. Fix: use a default argument to capture the current value: `funcs = [lambda i=i: i for i in range(3)]` → `[0, 1, 2]`.
+
+**Q: Can `finally` override a `return` statement?**
+A: Yes! If both `try` and `finally` have `return`, the `finally` return wins:
+```python
+def f():
+    try:
+        return 1
+    finally:
+        return 2
+
+print(f())  # 2 — finally's return overrides try's return
+```
+This is a known gotcha. Avoid putting `return` in `finally` blocks.
+
+**Q: What is name mangling in Python?**
+A: When you prefix an attribute with double underscore `__var`, Python internally renames it to `_ClassName__var` to avoid accidental access from subclasses:
+```python
+class Foo:
+    def __init__(self):
+        self.__secret = 42
+
+f = Foo()
+# f.__secret  → AttributeError
+# f._Foo__secret  → 42 (still accessible, just renamed)
+```
+It's not true security — it's a convention to signal "don't touch this."
+
+**Q: What happens if you modify a list while iterating over it?**
+A: You get unexpected behavior — items get skipped or the loop behaves incorrectly because the list's indices shift as you modify it:
+```python
+nums = [1, 2, 3, 4, 5]
+for n in nums:
+    if n % 2 == 0:
+        nums.remove(n)
+print(nums)  # [1, 3, 5]? NO → [1, 3, 5] may work sometimes, but it's unreliable
+```
+Fix: iterate over a copy (`for n in nums[:]`) or use list comprehension (`nums = [n for n in nums if n % 2 != 0]`).
+
+**Q: How do chained comparisons work in Python?**
+A: Python allows chaining comparisons like in math: `1 < x < 10` is equivalent to `1 < x and x < 10` but `x` is evaluated only once. Works with any comparison: `a <= b < c >= d`. Very clean and Pythonic — use it instead of writing `and` chains.
+
+---
+
+## Section 39: Debugging & Testing
+
+**Q: How do you debug a Python program?**
+A: Multiple ways:
+1. **Print debugging**: Add `print()` statements (quick and dirty)
+2. **`breakpoint()`** (Python 3.7+): Drop into the interactive debugger at that line. You can inspect variables, step through code line by line
+3. **`pdb`**: The built-in Python debugger. Commands: `n` (next line), `s` (step into), `c` (continue), `p var` (print variable), `l` (list code)
+4. **`logging` module**: Better than print — you can set levels (DEBUG, INFO, WARNING, ERROR) and easily turn them on/off
+5. **IDE debugger**: VS Code / PyCharm let you set breakpoints visually
+
+**Q: What is `unittest` and how do you write a basic test?**
+A: `unittest` is Python's built-in testing framework. You create a class that inherits from `unittest.TestCase` and write methods starting with `test_`:
+```python
+import unittest
+
+class TestMath(unittest.TestCase):
+    def test_addition(self):
+        self.assertEqual(1 + 1, 2)
+    
+    def test_negative(self):
+        self.assertTrue(-1 < 0)
+
+if __name__ == "__main__":
+    unittest.main()
+```
+Key assertions: `assertEqual`, `assertTrue`, `assertFalse`, `assertRaises`, `assertIn`.
+
+**Q: What is the difference between `unittest` and `pytest`?**
+A: `pytest` is a third-party framework that's simpler and more powerful:
+- **unittest**: Built-in, verbose, requires classes, uses `self.assertEqual(a, b)`
+- **pytest**: Just write functions, uses plain `assert a == b`, auto-discovers tests, better error messages, has powerful fixtures and plugins
+```python
+# pytest style — much simpler
+def test_addition():
+    assert 1 + 1 == 2
+```
+Most Python teams today prefer pytest. Run with `pytest` or `python -m pytest`.
+
+---
+
+## Section 40: Additional Must-Know Concepts
+
+**Q: What is duck typing in Python?**
+A: "If it walks like a duck and quacks like a duck, it IS a duck." In Python, you don't check an object's type — you check if it has the method you need. If an object has a `.read()` method, you can treat it like a file, regardless of its actual class. This is why Python doesn't need interfaces like Java — any object that implements the right methods just works.
+
+**Q: What is a `frozenset` and how is it different from a `set`?**
+A: A `frozenset` is an immutable set — once created, you cannot add or remove elements. Because it's immutable, it's hashable and can be used as a dictionary key or placed inside another set. Regular sets are mutable and NOT hashable.
+```python
+fs = frozenset([1, 2, 3])
+# fs.add(4)  → Error! Can't modify
+d = {fs: "value"}  # Works! Frozensets can be dict keys
+```
+
+**Q: What is `OrderedDict` and do you still need it?**
+A: `OrderedDict` (from `collections`) is a dictionary that remembers insertion order. Since Python 3.7+, regular `dict` also preserves insertion order. But `OrderedDict` still has uses: it supports `move_to_end()`, reordering, and two OrderedDicts are only equal if order matches (regular dicts don't compare order).
+
+**Q: What are descriptors in Python?**
+A: A descriptor is any object that defines `__get__`, `__set__`, or `__delete__`. They control what happens when an attribute is accessed on a class. `@property`, `@classmethod`, and `@staticmethod` are all implemented using descriptors under the hood. Example: `@property` uses `__get__` to run a function when you access an attribute.
+
+**Q: What are metaclasses in Python?**
+A: A metaclass is the "class of a class." Just like an object is an instance of a class, a class is an instance of a metaclass. The default metaclass is `type`. You can create custom metaclasses to control class creation (e.g., auto-registering classes, enforcing rules, adding methods automatically). Used rarely — most people never need them.
+```python
+class Meta(type):
+    def __new__(cls, name, bases, attrs):
+        attrs['created_by'] = 'Meta'
+        return super().__new__(cls, name, bases, attrs)
+
+class MyClass(metaclass=Meta):
+    pass
+
+print(MyClass.created_by)  # "Meta"
+```
+
+---
+
+## Section 41: Advanced Coding Problems
+
+**Q: How do you find the longest substring without repeating characters?**
+A: Use the **sliding window** technique with a set:
+```python
+def longest_unique_substring(s):
+    seen = set()
+    left = 0
+    max_len = 0
+    for right in range(len(s)):
+        while s[right] in seen:
+            seen.remove(s[left])
+            left += 1
+        seen.add(s[right])
+        max_len = max(max_len, right - left + 1)
+    return max_len
+```
+Two pointers (left, right) define a window. Expand right, shrink left when duplicate found. Time: O(n), Space: O(min(n, alphabet_size)).
+
+**Q: How do you merge overlapping intervals?**
+A: Sort by start time, then merge greedily:
+```python
+def merge_intervals(intervals):
+    intervals.sort(key=lambda x: x[0])
+    merged = [intervals[0]]
+    for start, end in intervals[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+```
+Key insight: after sorting, you only need to check if current interval overlaps with the LAST merged one. Time: O(n log n) for sorting.
+
+**Q: How do you group anagrams together?**
+A: Use a dict where the key is the sorted version of each word:
+```python
+from collections import defaultdict
+
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for word in words:
+        key = tuple(sorted(word))
+        groups[key].append(word)
+    return list(groups.values())
+
+# ["eat","tea","tan","ate","nat","bat"]
+# → [["eat","tea","ate"], ["tan","nat"], ["bat"]]
+```
+All anagrams have the same sorted characters. Time: O(n * k log k) where k is max word length.
+
+**Q: How do you find the Top K frequent elements?**
+A: Use `Counter` + `most_common()`:
+```python
+from collections import Counter
+
+def top_k_frequent(nums, k):
+    return [x for x, _ in Counter(nums).most_common(k)]
+
+# [1,1,1,2,2,3], k=2 → [1, 2]
+```
+Under the hood, `most_common(k)` uses a heap. Time: O(n log k). Alternative: bucket sort for O(n).
+
+**Q: How do you implement an LRU Cache?**
+A: Use `OrderedDict` — it maintains insertion order and supports moving items:
+```python
+from collections import OrderedDict
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cache = OrderedDict()
+        self.capacity = capacity
+    
+    def get(self, key):
+        if key not in self.cache:
+            return -1
+        self.cache.move_to_end(key)  # mark as recently used
+        return self.cache[key]
+    
+    def put(self, key, value):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        if len(self.cache) > self.capacity:
+            self.cache.popitem(last=False)  # remove oldest
+```
+Every get/put is O(1). This is a classic system design + coding question.
+
+**Q: How do you flatten a nested dictionary?**
+A: Use recursion with a prefix for keys:
+```python
+def flatten_dict(d, parent_key="", sep="."):
+    items = {}
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.update(flatten_dict(v, new_key, sep))
+        else:
+            items[new_key] = v
+    return items
+
+# {"a": {"b": 1, "c": {"d": 2}}} → {"a.b": 1, "a.c.d": 2}
+```
+
+**Q: How do you implement binary search?**
+A: Divide the sorted array in half each time:
+```python
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1  # not found
+```
+Time: O(log n). Only works on sorted arrays. Cut the search space in half each step — that's why it's so fast.

@@ -360,7 +360,7 @@ From earlier Testing-Critic audit, these fixes were implemented and still workin
 - **FastAPI:** 0.115.0
 - **PostgreSQL:** 16 (port 5432)
 - **OpenAI SDK:** >=1.54.0
-- **Port:** 8001
+- **Port:** 8000
 
 ### Frontend
 - **Node.js:** Latest
@@ -482,7 +482,7 @@ Get-Service postgresql-x64-16,postgresql-x64-18
 ```powershell
 # Start backend server
 cd E:\Sharuk\recall\backend
-.\venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8001
+.\venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 # Run E2E tests
 powershell -ExecutionPolicy Bypass -File tests\test_frontend_e2e.ps1

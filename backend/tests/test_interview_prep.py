@@ -1,6 +1,6 @@
 """
 Integration tests for Interview Prep features.
-Tests all new endpoints against a running backend (localhost:8001).
+Tests all new endpoints against a running backend (localhost:8000).
 
 Endpoints tested:
   GET  /api/stats/topic-coverage     — question coverage per category
@@ -28,7 +28,7 @@ import uuid
 sys.path.insert(0, "E:\\Sharuk\\recall\\backend")
 import httpx
 
-BASE = "http://localhost:8001"
+BASE = "http://localhost:8000"
 
 # Module-level state shared across sequential tests
 interview_id: str | None = None

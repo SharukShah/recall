@@ -12,12 +12,18 @@ import Link from "next/link";
 
 const TOPICS = [
   { value: "python", label: "Python" },
+  { value: "python_basics", label: "Python Basics" },
   { value: "dsa", label: "Data Structures & Algorithms" },
   { value: "system_design", label: "System Design" },
   { value: "oop", label: "Object-Oriented Programming" },
   { value: "web_dev", label: "Web Development" },
   { value: "databases", label: "Databases" },
+  { value: "networking", label: "Networking" },
+  { value: "os_concepts", label: "Operating Systems" },
+  { value: "testing", label: "Testing" },
+  { value: "devops", label: "DevOps" },
   { value: "behavioral", label: "Behavioral" },
+  { value: "general", label: "General" },
 ];
 
 const DIFFICULTIES = [
