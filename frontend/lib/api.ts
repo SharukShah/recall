@@ -25,6 +25,9 @@ import type {
   TopicCoverageResponse,
   WeakCategoriesResponse,
   StreakInfoResponse,
+  GymSessionRequest,
+  GymSessionResponse,
+  GymStatsResponse,
 } from "@/types/api";
 import type {
   PushSubscriptionData,
@@ -380,4 +383,16 @@ export async function startFocusSession(categories: string[], limit = 10) {
     method: 'POST',
     body: JSON.stringify({ categories, limit }),
   });
+}
+
+// Memory Gym
+export async function recordGymSession(data: GymSessionRequest): Promise<GymSessionResponse> {
+  return request<GymSessionResponse>('/api/gym/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getGymStats(): Promise<GymStatsResponse> {
+  return request<GymStatsResponse>('/api/gym/stats');
 }

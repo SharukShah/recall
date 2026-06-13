@@ -14,7 +14,7 @@ from config import settings
 from db import create_db_pool, close_db_pool
 from core.auth import get_current_user
 from routers import captures, reviews, stats, knowledge, voice, questions
-from routers import graph, loci, notifications, reflections, teach, voice_ws
+from routers import graph, loci, notifications, reflections, teach, voice_ws, gym
 
 # Configure logging
 logging.basicConfig(
@@ -109,6 +109,7 @@ app.include_router(loci.router, prefix="/api/loci", tags=["loci"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(reflections.router, prefix="/api/reflections", tags=["reflections"])
 app.include_router(teach.router, prefix="/api/teach", tags=["teach"])
+app.include_router(gym.router, prefix="/api/gym", tags=["gym"])
 app.include_router(voice_ws.router, tags=["voice-ws"])
 
 

@@ -6,6 +6,11 @@ import {
   ArrowLeft, Play, RotateCcw, Check, X, Volume2, Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { recordGymSession, getGymStats } from "@/lib/api";
+import type { GymSessionRequest, GymStatsResponse, GymExercise } from "@/types/api";
+
+/* Each exercise reports its finished round here; the hub records it + refreshes bests. */
+type OnComplete = (r: GymSessionRequest) => void;
 
 /* ------------------------------------------------------------------ */
 /*  Per-exercise accent classes (theme-independent, work in dark mode) */
@@ -127,7 +132,7 @@ function makeNBackSeq(n: number, beats: number): Beat[] {
   }
   return seq;
 }
-function DualNBack({ onBack }: { onBack: () => void }) {
+function DualNBack({ onBack, onComplete }: { onBack: () => void; onComplete: OnComplete }) {
   const [n, setN] = useState(2);
   const [phase, setPhase] = useState<"idle" | "run" | "done">("idle");
   const [step, setStep] = useState(-1);
@@ -202,6 +207,19 @@ function DualNBack({ onBack }: { onBack: () => void }) {
     return () => window.removeEventListener("keydown", h);
   }, [phase]);
 
+  useEffect(() => {
+    if (phase === "done" && result) {
+      onComplete({
+        exercise: "dual_n_back",
+        score: result.accuracy,
+        max_score: 100,
+        level: result.prevN,
+        detail: { pos_hit: result.pHit, snd_hit: result.lHit, false_alarms: result.fa },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const cur = step >= 0 ? seqRef.current[step] : null;
   const curResp = step >= 0 ? respRef.current[step] : {};
 
@@ -262,7 +280,7 @@ function DualNBack({ onBack }: { onBack: () => void }) {
 }
 
 /* ============================ 2. SPAN DRILL ======================= */
-function SpanDrill({ onBack }: { onBack: () => void }) {
+function SpanDrill({ onBack, onComplete }: { onBack: () => void; onComplete: OnComplete }) {
   const [reverse, setReverse] = useState(false);
   const [phase, setPhase] = useState<"idle" | "show" | "recall" | "done">("idle");
   const [len, setLen] = useState(3);
@@ -292,6 +310,13 @@ function SpanDrill({ onBack }: { onBack: () => void }) {
     else setPhase("done");
   };
   const press = (d: number) => { if (entry.length < len) setEntry((e) => [...e, d]); };
+
+  useEffect(() => {
+    if (phase === "done") {
+      onComplete({ exercise: "span", score: best, level: best, detail: { reverse } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   return (
     <ExerciseShell title="Span Drill" subtitle={reverse ? "Repeat the digits in reverse" : "Repeat the digits in order"} onBack={onBack}>
@@ -355,7 +380,7 @@ function genMath(level: number) {
   const ans = op === "+" ? a + b : op === "-" ? a - b : a * b;
   return { text: `${a} ${op} ${b}`, ans };
 }
-function MathLadder({ onBack }: { onBack: () => void }) {
+function MathLadder({ onBack, onComplete }: { onBack: () => void; onComplete: OnComplete }) {
   const [phase, setPhase] = useState<"idle" | "run" | "done">("idle");
   const [time, setTime] = useState(60);
   const [q, setQ] = useState<{ text: string; ans: number } | null>(null);
@@ -374,6 +399,13 @@ function MathLadder({ onBack }: { onBack: () => void }) {
     const t = setTimeout(() => setTime((v) => v - 1), 1000);
     return () => clearTimeout(t);
   }, [phase, time]);
+
+  useEffect(() => {
+    if (phase === "done") {
+      onComplete({ exercise: "math_ladder", score, duration_seconds: 60, detail: { best_streak: best } });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const submit = () => {
     if (entry === "" || !q) return;
@@ -462,13 +494,18 @@ function genPattern(level: number) {
   while (set.size < 4) set.add(ans + set.size * 3);
   return { terms, ans, opts: shuffle(Array.from(set)) };
 }
-function PatternPuzzle({ onBack }: { onBack: () => void }) {
+function PatternPuzzle({ onBack, onComplete }: { onBack: () => void; onComplete: OnComplete }) {
   const TOTAL = 10;
   const [phase, setPhase] = useState<"idle" | "run" | "done">("idle");
   const [i, setI] = useState(0);
   const [score, setScore] = useState(0);
   const [q, setQ] = useState<ReturnType<typeof genPattern> | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (phase === "done") onComplete({ exercise: "pattern", score, max_score: TOTAL });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const next = (idx: number) => { setQ(genPattern(Math.floor(idx / 3))); setPicked(null); };
   const start = () => { setScore(0); setI(0); next(0); setPhase("run"); };
@@ -544,7 +581,7 @@ function Avatar({ seed, size = 84 }: { seed: number; size?: number }) {
     </svg>
   );
 }
-function NameFace({ onBack }: { onBack: () => void }) {
+function NameFace({ onBack, onComplete }: { onBack: () => void; onComplete: OnComplete }) {
   const COUNT = 5;
   const [phase, setPhase] = useState<"idle" | "study" | "test" | "done">("idle");
   const [people, setPeople] = useState<{ name: string; seed: number }[]>([]);
@@ -573,6 +610,11 @@ function NameFace({ onBack }: { onBack: () => void }) {
     const t = setTimeout(() => setStudyT((v) => v - 1), 1000);
     return () => clearTimeout(t);
   }, [phase, studyT]);
+
+  useEffect(() => {
+    if (phase === "done") onComplete({ exercise: "name_face", score, max_score: COUNT });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const choose = (name: string) => {
     if (picked) return;
@@ -639,23 +681,33 @@ function NameFace({ onBack }: { onBack: () => void }) {
 }
 
 /* ============================== HUB ============================== */
-const EXERCISES: { key: string; name: string; tag: string; icon: any; accent: Accent; desc: string }[] = [
-  { key: "nback", name: "Dual N-Back", tag: "Working memory", icon: Brain, accent: "primary", desc: "Track position and sound together. The benchmark working-memory drill." },
-  { key: "span", name: "Span Drill", tag: "Memory span", icon: Hash, accent: "amber", desc: "Hold a growing string of digits — forward or reversed." },
-  { key: "math", name: "Math Ladder", tag: "Processing speed", icon: Calculator, accent: "emerald", desc: "60 seconds of arithmetic that speeds up as you streak." },
-  { key: "pattern", name: "Pattern Puzzles", tag: "Fluid reasoning", icon: Shapes, accent: "primary", desc: "Spot the rule and predict what comes next." },
-  { key: "face", name: "Name–Face", tag: "Associative recall", icon: Users, accent: "rose", desc: "The everyday one: match faces to names after a delay." },
+const EXERCISES: { key: string; gymKey: GymExercise; name: string; tag: string; icon: any; accent: Accent; desc: string; pb: (n: number) => string }[] = [
+  { key: "nback", gymKey: "dual_n_back", name: "Dual N-Back", tag: "Working memory", icon: Brain, accent: "primary", desc: "Track position and sound together. The benchmark working-memory drill.", pb: (n) => `${n}%` },
+  { key: "span", gymKey: "span", name: "Span Drill", tag: "Memory span", icon: Hash, accent: "amber", desc: "Hold a growing string of digits — forward or reversed.", pb: (n) => `${n} digits` },
+  { key: "math", gymKey: "math_ladder", name: "Math Ladder", tag: "Processing speed", icon: Calculator, accent: "emerald", desc: "60 seconds of arithmetic that speeds up as you streak.", pb: (n) => `${n} solved` },
+  { key: "pattern", gymKey: "pattern", name: "Pattern Puzzles", tag: "Fluid reasoning", icon: Shapes, accent: "primary", desc: "Spot the rule and predict what comes next.", pb: (n) => `${n}/10` },
+  { key: "face", gymKey: "name_face", name: "Name–Face", tag: "Associative recall", icon: Users, accent: "rose", desc: "The everyday one: match faces to names after a delay.", pb: (n) => `${n}/5` },
 ];
 
 export function MemoryGym() {
   const [view, setView] = useState<string>("hub");
+  const [stats, setStats] = useState<GymStatsResponse | null>(null);
   const back = () => setView("hub");
 
-  if (view === "nback") return <DualNBack onBack={back} />;
-  if (view === "span") return <SpanDrill onBack={back} />;
-  if (view === "math") return <MathLadder onBack={back} />;
-  if (view === "pattern") return <PatternPuzzle onBack={back} />;
-  if (view === "face") return <NameFace onBack={back} />;
+  const refresh = useCallback(() => { getGymStats().then(setStats).catch(() => {}); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const onComplete = useCallback((r: GymSessionRequest) => {
+    recordGymSession(r).then(refresh).catch(() => {});
+  }, [refresh]);
+
+  if (view === "nback") return <DualNBack onBack={back} onComplete={onComplete} />;
+  if (view === "span") return <SpanDrill onBack={back} onComplete={onComplete} />;
+  if (view === "math") return <MathLadder onBack={back} onComplete={onComplete} />;
+  if (view === "pattern") return <PatternPuzzle onBack={back} onComplete={onComplete} />;
+  if (view === "face") return <NameFace onBack={back} onComplete={onComplete} />;
+
+  const bestByKey: Record<string, number> = {};
+  for (const s of stats?.exercises ?? []) bestByKey[s.exercise] = s.best_score;
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4">
@@ -663,6 +715,7 @@ export function MemoryGym() {
       <div className="flex flex-col gap-3">
         {EXERCISES.map((e, idx) => {
           const Icon = e.icon;
+          const best = bestByKey[e.gymKey];
           return (
             <button key={e.key} onClick={() => setView(e.key)} className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-4 text-left transition active:scale-[0.98] hover:bg-accent">
               <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl", A[e.accent].soft, A[e.accent].text)}>
@@ -675,7 +728,13 @@ export function MemoryGym() {
                 </span>
                 <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{e.desc}</span>
               </span>
-              <span className="font-mono text-xs text-muted-foreground/40">0{idx + 1}</span>
+              {best != null ? (
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] font-semibold text-foreground" title="Personal best">
+                  <Trophy size={11} className="text-amber-500" />{e.pb(best)}
+                </span>
+              ) : (
+                <span className="font-mono text-xs text-muted-foreground/40">0{idx + 1}</span>
+              )}
             </button>
           );
         })}

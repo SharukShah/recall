@@ -1077,3 +1077,89 @@ async def complete_teach_session(conn: asyncpg.Connection, session_id: str, capt
         "UPDATE teach_sessions SET status = 'complete', capture_id = $2, updated_at = NOW() WHERE id = $1",
         uuid.UUID(session_id), uuid.UUID(capture_id) if capture_id else None,
     )
+
+
+# ============================================================
+# MEMORY GYM QUERIES
+# ============================================================
+
+async def insert_gym_session(
+    pool_or_conn: PoolOrConn,
+    exercise: str,
+    score: int,
+    max_score: int | None,
+    level: int | None,
+    duration_seconds: int | None,
+    detail: dict | None,
+) -> tuple[str, datetime]:
+    """Insert a gym training session. Returns (id, created_at)."""
+    import json as _json
+    session_id = str(uuid.uuid4())
+    async with await _acquire(pool_or_conn) as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO gym_sessions
+                (id, exercise, score, max_score, level, duration_seconds, detail)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+            RETURNING created_at
+            """,
+            uuid.UUID(session_id), exercise, score, max_score, level,
+            duration_seconds, _json.dumps(detail) if detail is not None else None,
+        )
+    return session_id, row["created_at"]
+
+
+async def get_gym_best_score(pool_or_conn: PoolOrConn, exercise: str) -> int | None:
+    """Return the best (max) score recorded for an exercise, or None."""
+    async with await _acquire(pool_or_conn) as conn:
+        return await conn.fetchval(
+            "SELECT MAX(score) FROM gym_sessions WHERE exercise = $1", exercise
+        )
+
+
+async def list_gym_sessions(
+    pool_or_conn: PoolOrConn,
+    exercise: str | None,
+    limit: int,
+    offset: int,
+) -> list:
+    """List gym sessions, optionally filtered by exercise, newest first."""
+    async with await _acquire(pool_or_conn) as conn:
+        if exercise:
+            rows = await conn.fetch(
+                """
+                SELECT id, exercise, score, max_score, level, duration_seconds, detail, created_at
+                FROM gym_sessions WHERE exercise = $1
+                ORDER BY created_at DESC LIMIT $2 OFFSET $3
+                """,
+                exercise, limit, offset,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, exercise, score, max_score, level, duration_seconds, detail, created_at
+                FROM gym_sessions
+                ORDER BY created_at DESC LIMIT $1 OFFSET $2
+                """,
+                limit, offset,
+            )
+    return [dict(r) for r in rows]
+
+
+async def get_gym_stats(pool_or_conn: PoolOrConn) -> tuple[int, list]:
+    """Return (total_sessions, per-exercise aggregates)."""
+    async with await _acquire(pool_or_conn) as conn:
+        total = await conn.fetchval("SELECT COUNT(*) FROM gym_sessions") or 0
+        rows = await conn.fetch(
+            """
+            SELECT exercise,
+                   MAX(score)            AS best_score,
+                   MAX(level)            AS best_level,
+                   COUNT(*)              AS sessions,
+                   MAX(created_at)       AS last_played_at
+            FROM gym_sessions
+            GROUP BY exercise
+            ORDER BY exercise
+            """
+        )
+    return total, [dict(r) for r in rows]

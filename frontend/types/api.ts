@@ -311,3 +311,39 @@ export interface FocusSessionRequest {
   categories: string[];
   limit: number;
 }
+
+// Memory Gym
+export type GymExercise =
+  | "dual_n_back"
+  | "span"
+  | "math_ladder"
+  | "pattern"
+  | "name_face";
+
+export interface GymSessionRequest {
+  exercise: GymExercise;
+  score: number;
+  max_score?: number | null;
+  level?: number | null;
+  duration_seconds?: number | null;
+  detail?: Record<string, unknown> | null;
+}
+
+export interface GymSessionResponse {
+  session_id: string;
+  created_at: string;
+  is_best: boolean;
+}
+
+export interface GymExerciseStat {
+  exercise: GymExercise;
+  best_score: number;
+  best_level: number | null;
+  sessions: number;
+  last_played_at: string | null;
+}
+
+export interface GymStatsResponse {
+  total_sessions: number;
+  exercises: GymExerciseStat[];
+}
