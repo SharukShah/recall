@@ -8,7 +8,7 @@ import { RecentCaptures } from "@/components/dashboard/RecentCaptures";
 import { SkeletonCard } from "@/components/shared/SkeletonCard";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Sunset, GraduationCap, Flame, Plus, Brain, Swords } from "lucide-react";
+import { Sunset, GraduationCap, Flame, Plus, Brain } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -89,22 +89,6 @@ export default function DashboardPage() {
 
       {/* Review CTA */}
       <ReviewCTA stats={stats} />
-
-      {/* Interview Prep CTA */}
-      <Link href="/interview" className="block">
-        <Card className="hover:shadow-md transition-shadow cursor-pointer border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
-          <CardContent className="pt-4 pb-3 flex items-center gap-3">
-            <div className="rounded-lg bg-blue-100 dark:bg-blue-900/50 p-2.5">
-              <Swords className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold">Interview Prep</p>
-              <p className="text-xs text-muted-foreground">Mock interviews, behavioral STAR practice, weak area drills</p>
-            </div>
-            <span className="text-xs text-blue-600 dark:text-blue-400 font-medium shrink-0">Go →</span>
-          </CardContent>
-        </Card>
-      </Link>
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-3">
