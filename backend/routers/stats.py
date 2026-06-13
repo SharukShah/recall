@@ -1,5 +1,5 @@
 """
-Stats router — dashboard data + interview prep analytics.
+Stats router — dashboard data + knowledge analytics.
 GET /dashboard        → due count, total captures, total questions, reviews today, streak
 GET /analytics        → detailed analytics summary
 GET /retention-curve  → retention trend over weeks

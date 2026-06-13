@@ -263,139 +263,6 @@ export interface QuestionStatsSummary {
   most_failed: { id: string; question_text: string; accuracy_rate: number }[];
 }
 
-// Interview types
-export interface InterviewQuestion {
-  question_id: string | null;
-  question_text: string;
-  question_order: number;
-}
-
-export interface StartInterviewResponse {
-  interview_id: string;
-  topic: string;
-  difficulty: string;
-  duration_minutes: number;
-  total_questions: number;
-  first_question: InterviewQuestion;
-}
-
-export interface InterviewAnswerResponse {
-  score: number;
-  feedback: string;
-  follow_up_question: string | null;
-  next_question: InterviewQuestion | null;
-  done: boolean;
-}
-
-export interface InterviewSummary {
-  interview_id: string;
-  topic: string;
-  difficulty: string;
-  overall_score: number;
-  total_questions: number;
-  correct_count: number;
-  partial_count: number;
-  wrong_count: number;
-  strengths: string[];
-  weaknesses: string[];
-  improvement_tips: string[];
-  answers: Array<{
-    question_text: string;
-    user_answer: string | null;
-    score: number | null;
-    feedback: string | null;
-  }>;
-  duration_seconds: number | null;
-}
-
-export interface InterviewListItem {
-  id: string;
-  topic: string;
-  difficulty: string;
-  overall_score: number | null;
-  total_questions: number;
-  correct_count: number;
-  status: string;
-  started_at: string;
-  completed_at: string | null;
-}
-
-export interface InterviewListResponse {
-  interviews: InterviewListItem[];
-  total: number;
-}
-
-// Behavioral types
-export interface StarStory {
-  id: string;
-  capture_id: string | null;
-  title: string;
-  situation: string;
-  task: string;
-  action: string;
-  result: string;
-  competency: string;
-  strength_rating: number;
-  times_practiced: number;
-  last_practiced_at: string | null;
-  created_at: string;
-}
-
-export interface StarStoryListItem {
-  id: string;
-  title: string;
-  competency: string;
-  strength_rating: number;
-  times_practiced: number;
-  created_at: string;
-}
-
-export interface StarStoryListResponse {
-  stories: StarStoryListItem[];
-  total: number;
-}
-
-export interface BehavioralCaptureResponse {
-  story_id: string;
-  capture_id: string;
-  title: string;
-  situation: string;
-  task: string;
-  action: string;
-  result: string;
-  competency: string;
-  strength_rating: number;
-}
-
-export interface PracticeQuestionResponse {
-  question: string;
-  competency: string;
-  tips: string;
-}
-
-export interface BehavioralEvaluation {
-  situation_score: number;
-  task_score: number;
-  action_score: number;
-  result_score: number;
-  overall_score: number;
-  feedback: string;
-  suggestions: string[];
-}
-
-export interface CompetencyCoverage {
-  competency: string;
-  story_count: number;
-  avg_strength: number | null;
-  last_practiced: string | null;
-}
-
-export interface BehavioralCoverageResponse {
-  competencies: CompetencyCoverage[];
-  total_competencies: number;
-  covered_competencies: number;
-}
-
 // Topic coverage types
 export interface TopicCoverage {
   category: string;
@@ -443,4 +310,40 @@ export interface StreakInfoResponse {
 export interface FocusSessionRequest {
   categories: string[];
   limit: number;
+}
+
+// Memory Gym
+export type GymExercise =
+  | "dual_n_back"
+  | "span"
+  | "math_ladder"
+  | "pattern"
+  | "name_face";
+
+export interface GymSessionRequest {
+  exercise: GymExercise;
+  score: number;
+  max_score?: number | null;
+  level?: number | null;
+  duration_seconds?: number | null;
+  detail?: Record<string, unknown> | null;
+}
+
+export interface GymSessionResponse {
+  session_id: string;
+  created_at: string;
+  is_best: boolean;
+}
+
+export interface GymExerciseStat {
+  exercise: GymExercise;
+  best_score: number;
+  best_level: number | null;
+  sessions: number;
+  last_played_at: string | null;
+}
+
+export interface GymStatsResponse {
+  total_sessions: number;
+  exercises: GymExerciseStat[];
 }

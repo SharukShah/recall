@@ -40,7 +40,7 @@ export function VoiceTranscript({ entries, className }: VoiceTranscriptProps) {
       )}
     >
       {entries.map((entry, i) => {
-        const isAgent = entry.role === "agent" || entry.role === "assistant";
+        const isAgent = entry.role === "agent";
         return (
           <div key={i} className={cn("flex gap-2 text-sm rounded-lg px-3 py-2", isAgent ? "bg-primary/5" : "bg-muted/50")}>
             <span

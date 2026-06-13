@@ -70,7 +70,7 @@ class AnalyticsResponse(BaseModel):
     summary: AnalyticsSummary
 
 
-# --- Interview Prep Analytics ---
+# --- Category & Coverage Analytics ---
 
 class TopicCoverage(BaseModel):
     category: str

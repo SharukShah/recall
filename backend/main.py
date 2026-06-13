@@ -3,7 +3,7 @@ ReCall MVP — FastAPI application entry point.
 Handles app lifecycle, CORS, routing, and error handling.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
@@ -12,9 +12,9 @@ import logging
 
 from config import settings
 from db import create_db_pool, close_db_pool
+from core.auth import get_current_user
 from routers import captures, reviews, stats, knowledge, voice, questions
-from routers import interviews, behavioral
-from routers import graph, loci, notifications, reflections, teach, voice_ws
+from routers import graph, loci, notifications, reflections, teach, voice_ws, gym
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +59,7 @@ app = FastAPI(
     description="AI-powered spaced repetition memory system",
     version="0.1.0",
     lifespan=lifespan,
+    dependencies=[Depends(get_current_user)],
 )
 
 # CORS middleware (allow Next.js frontend)
@@ -103,13 +104,12 @@ app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["knowledge"])
 app.include_router(voice.router, prefix="/api/voice", tags=["voice"])
 app.include_router(questions.router, prefix="/api/questions", tags=["questions"])
-app.include_router(interviews.router, prefix="/api/interviews", tags=["interviews"])
-app.include_router(behavioral.router, prefix="/api/behavioral", tags=["behavioral"])
 app.include_router(graph.router, prefix="/api/graph", tags=["graph"])
 app.include_router(loci.router, prefix="/api/loci", tags=["loci"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(reflections.router, prefix="/api/reflections", tags=["reflections"])
 app.include_router(teach.router, prefix="/api/teach", tags=["teach"])
+app.include_router(gym.router, prefix="/api/gym", tags=["gym"])
 app.include_router(voice_ws.router, tags=["voice-ws"])
 
 

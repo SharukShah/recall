@@ -22,19 +22,12 @@ import type {
   QuestionListResponse,
   QuestionDetail,
   QuestionStatsSummary,
-  StartInterviewResponse,
-  InterviewAnswerResponse,
-  InterviewSummary,
-  InterviewListResponse,
-  BehavioralCaptureResponse,
-  StarStoryListResponse,
-  StarStory,
-  PracticeQuestionResponse,
-  BehavioralEvaluation,
-  BehavioralCoverageResponse,
   TopicCoverageResponse,
   WeakCategoriesResponse,
   StreakInfoResponse,
+  GymSessionRequest,
+  GymSessionResponse,
+  GymStatsResponse,
 } from "@/types/api";
 import type {
   PushSubscriptionData,
@@ -371,82 +364,6 @@ export async function getQuestionStats(): Promise<QuestionStatsSummary> {
   return request<QuestionStatsSummary>(`/api/questions/stats/summary`);
 }
 
-// Interview APIs
-export async function startInterview(topic: string, difficulty: string, duration_minutes: number) {
-  return request<StartInterviewResponse>('/api/interviews/', {
-    method: 'POST',
-    body: JSON.stringify({ topic, difficulty, duration_minutes }),
-  });
-}
-
-export async function submitInterviewAnswer(interviewId: string, order: number, userAnswer: string) {
-  return request<InterviewAnswerResponse>(`/api/interviews/${encodeURIComponent(interviewId)}/answer/${order}`, {
-    method: 'POST',
-    body: JSON.stringify({ user_answer: userAnswer }),
-  });
-}
-
-export async function completeInterview(interviewId: string) {
-  return request<InterviewSummary>(`/api/interviews/${encodeURIComponent(interviewId)}/complete`, {
-    method: 'POST',
-  });
-}
-
-export async function listInterviews(topic?: string, limit = 10, offset = 0) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (topic) params.set('topic', topic);
-  return request<InterviewListResponse>(`/api/interviews/?${params}`);
-}
-
-export async function getInterviewSummary(id: string) {
-  return request<InterviewSummary>(`/api/interviews/${encodeURIComponent(id)}/summary`);
-}
-
-// Behavioral APIs
-export async function captureBehavioral(narrative: string, competency: string) {
-  return request<BehavioralCaptureResponse>('/api/behavioral/capture', {
-    method: 'POST',
-    body: JSON.stringify({ narrative, competency }),
-  });
-}
-
-export async function listStories(competency?: string, limit = 20, offset = 0) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (competency) params.set('competency', competency);
-  return request<StarStoryListResponse>(`/api/behavioral/stories?${params}`);
-}
-
-export async function getStory(id: string) {
-  return request<StarStory>(`/api/behavioral/stories/${encodeURIComponent(id)}`);
-}
-
-export async function updateStory(id: string, updates: Partial<StarStory>) {
-  return request<StarStory>(`/api/behavioral/stories/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(updates),
-  });
-}
-
-export async function deleteStory(id: string) {
-  return request<void>(`/api/behavioral/stories/${encodeURIComponent(id)}`, { method: 'DELETE' });
-}
-
-export async function getPracticeQuestion(competency?: string) {
-  const params = competency ? `?competency=${encodeURIComponent(competency)}` : '';
-  return request<PracticeQuestionResponse>(`/api/behavioral/practice${params}`);
-}
-
-export async function evaluateBehavioral(competency: string, question: string, answer: string) {
-  return request<BehavioralEvaluation>('/api/behavioral/practice/evaluate', {
-    method: 'POST',
-    body: JSON.stringify({ competency, question, user_answer: answer }),
-  });
-}
-
-export async function getBehavioralCoverage() {
-  return request<BehavioralCoverageResponse>('/api/behavioral/coverage');
-}
-
 // Stats APIs
 export async function getTopicCoverage() {
   return request<TopicCoverageResponse>('/api/stats/topic-coverage');
@@ -466,4 +383,16 @@ export async function startFocusSession(categories: string[], limit = 10) {
     method: 'POST',
     body: JSON.stringify({ categories, limit }),
   });
+}
+
+// Memory Gym
+export async function recordGymSession(data: GymSessionRequest): Promise<GymSessionResponse> {
+  return request<GymSessionResponse>('/api/gym/', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getGymStats(): Promise<GymStatsResponse> {
+  return request<GymStatsResponse>('/api/gym/stats');
 }
