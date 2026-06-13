@@ -26,7 +26,6 @@ def fail(name, err):
     failed += 1
     print(f"  ✗ {name} — {err}")
 
-xxxxxxxxxxxxxxxxxxxdfdddddddddffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffxdfdgdddddddddddddddddddddddddddddxddxxxxxxxddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddx            xxxxxxxxxxxxxxxxxzdxxxxxxxxxxxxxxxxxxxxxxxxxvghd
 async def main():
     global passed, failed
 
@@ -297,8 +296,8 @@ async def main():
 
         # Note: Export endpoints not yet implemented — skipped
 
-        # ===== PAGE 13: INTERVIEW HUB (/interview) =====
-        print("\n--- PAGE 13: INTERVIEW PREP HUB ---")
+        # ===== PAGE 13: STATS — TOPIC COVERAGE / WEAK AREAS / STREAK =====
+        print("\n--- PAGE 13: STATS (coverage / weak areas / streak) ---")
 
         try:
             r = await c.get("/api/stats/topic-coverage")
@@ -322,155 +321,6 @@ async def main():
             ok("Streak info", f"streak={d['current_streak']}, at_risk={d['streak_at_risk']}, next={d.get('next_milestone')}")
         except Exception as e:
             fail("Streak info", e)
-
-        try:
-            r = await c.get("/api/behavioral/coverage")
-            assert r.status_code == 200
-            d = r.json()
-            ok("Behavioral coverage", f"{d['covered_competencies']}/{d['total_competencies']} covered")
-        except Exception as e:
-            fail("Behavioral coverage", e)
-
-        try:
-            r = await c.get("/api/interviews/")
-            assert r.status_code == 200
-            d = r.json()
-            ok("Interview history", f"{d.get('total', 0)} interviews")
-        except Exception as e:
-            fail("Interview history", e)
-
-        # ===== PAGE 14: MOCK INTERVIEW (/interview/mock) =====
-        print("\n--- PAGE 14: MOCK INTERVIEW ---")
-
-        interview_id = None
-        total_qs = 0
-        try:
-            r = await c.post("/api/interviews/", json={
-                "topic": "python",
-                "difficulty": "easy",
-                "duration_minutes": 15
-            })
-            assert r.status_code == 200
-            d = r.json()
-            interview_id = d["interview_id"]
-            total_qs = d["total_questions"]
-            ok("Start mock interview", f"id={interview_id[:8]}..., {total_qs} questions, Q1: {d['first_question']['question_text'][:50]}...")
-        except Exception as e:
-            fail("Start mock interview", e)
-
-        if interview_id:
-            # Answer all questions
-            for i in range(1, total_qs + 1):
-                try:
-                    r = await c.post(f"/api/interviews/{interview_id}/answer/{i}", json={
-                        "user_answer": "Python is a high-level programming language with dynamic typing, garbage collection, and extensive standard library support."
-                    })
-                    assert r.status_code == 200
-                    d = r.json()
-                    ok(f"Answer Q{i}", f"score={d['score']}/5")
-                except Exception as e:
-                    fail(f"Answer Q{i}", e)
-
-            # Complete interview
-            try:
-                r = await c.post(f"/api/interviews/{interview_id}/complete")
-                assert r.status_code == 200
-                d = r.json()
-                ok("Complete interview", f"overall={d['overall_score']}/5, strengths={len(d.get('strengths', []))}, weaknesses={len(d.get('weaknesses', []))}")
-            except Exception as e:
-                fail("Complete interview", e)
-
-            # View summary
-            try:
-                r = await c.get(f"/api/interviews/{interview_id}/summary")
-                assert r.status_code == 200
-                d = r.json()
-                ok("Interview summary", f"{len(d.get('answers', []))} answers, tips={len(d.get('improvement_tips', []))}")
-            except Exception as e:
-                fail("Interview summary", e)
-
-        # ===== PAGE 15: INTERVIEW HISTORY (/interview/history) =====
-        print("\n--- PAGE 15: INTERVIEW HISTORY ---")
-
-        try:
-            r = await c.get("/api/interviews/?limit=10")
-            assert r.status_code == 200
-            d = r.json()
-            ok("List all interviews", f"{d['total']} total")
-        except Exception as e:
-            fail("List interviews", e)
-
-        try:
-            r = await c.get("/api/interviews/?topic=python&limit=5")
-            assert r.status_code == 200
-            ok("Filter by topic", f"{r.json()['total']} python interviews")
-        except Exception as e:
-            fail("Filter by topic", e)
-
-        # ===== PAGE 16: BEHAVIORAL PREP (/interview/behavioral) =====
-        print("\n--- PAGE 16: BEHAVIORAL PREP ---")
-
-        try:
-            r = await c.get("/api/behavioral/stories?limit=10")
-            assert r.status_code == 200
-            d = r.json()
-            ok("List STAR stories", f"{d['total']} stories")
-        except Exception as e:
-            fail("List stories", e)
-
-        try:
-            r = await c.get("/api/behavioral/coverage")
-            assert r.status_code == 200
-            d = r.json()
-            for comp in d.get("competencies", []):
-                if comp["story_count"] > 0:
-                    ok(f"  Competency: {comp['competency']}", f"{comp['story_count']} stories, strength={comp.get('avg_strength')}")
-        except Exception as e:
-            fail("Coverage detail", e)
-
-        # Capture a new STAR story
-        story_id = None
-        try:
-            r = await c.post("/api/behavioral/capture", json={
-                "narrative": "During a critical deployment last quarter, our CI pipeline broke and was blocking all team merges. I took ownership of the issue, analyzed the failing tests, identified a flaky test caused by timezone-dependent assertions. I wrote a patch, added timezone-aware fixtures, and submitted a PR within 2 hours. The pipeline was unblocked and we shipped the release on time. The fix also prevented 15 similar failures in the following month.",
-                "competency": "initiative"
-            })
-            assert r.status_code == 200
-            d = r.json()
-            story_id = d["story_id"]
-            ok("Capture STAR story", f"title={d['title'][:40]}..., S/T/A/R extracted, strength={d['strength_rating']}")
-        except Exception as e:
-            fail("Capture STAR", e)
-
-        if story_id:
-            try:
-                r = await c.get(f"/api/behavioral/stories/{story_id}")
-                assert r.status_code == 200
-                d = r.json()
-                ok("View story detail", f"S={d['situation'][:40]}... T={d['task'][:30]}...")
-            except Exception as e:
-                fail("View story", e)
-
-        # Practice behavioral
-        try:
-            r = await c.get("/api/behavioral/practice?competency=leadership")
-            assert r.status_code == 200
-            d = r.json()
-            ok("Get practice question", f"Q: {d['question'][:50]}...")
-        except Exception as e:
-            fail("Practice question", e)
-
-        try:
-            r = await c.post("/api/behavioral/practice/evaluate", json={
-                "competency": "leadership",
-                "question": "Tell me about a time you led a team through a challenging project.",
-                "answer": "Last year I led a team of 5 engineers to migrate our monolith to microservices. I created a phased migration plan, held weekly architecture reviews, and personally mentored two junior developers who were struggling with the new patterns. We completed the migration 2 weeks ahead of schedule with zero downtime. The new architecture reduced deployment time from 45 minutes to 8 minutes."
-            })
-            assert r.status_code == 200
-            d = r.json()
-            ok("Evaluate behavioral", f"overall={d['overall_score']}/5, S={d['situation_score']} T={d['task_score']} A={d['action_score']} R={d['result_score']}")
-        except Exception as e:
-            fail("Evaluate behavioral", e)
 
         # ===== PAGE 17: FOCUS SESSION (/review?categories=...) =====
         print("\n--- PAGE 17: FOCUS SESSION ---")
@@ -551,57 +401,12 @@ async def main():
             })
             ok("Voice: submit_reflection", f"capture_id={str(ref.get('capture_id',''))[:8]}...")
 
-            # 9. start_mock_interview
-            mi = await mgr._dispatch(session, "start_mock_interview", {
-                "topic": "dsa",
-                "difficulty": "easy",
-                "duration_minutes": 15
-            })
-            ok("Voice: start_mock_interview", f"interview_id={str(mi.get('interview_id',''))[:8]}..., questions={mi.get('total_questions')}")
-
-            # 10. submit_interview_answer
-            if mi.get("interview_id"):
-                sia = await mgr._dispatch(session, "submit_interview_answer", {
-                    "interview_id": mi["interview_id"],
-                    "question_order": 1,
-                    "user_answer": "A hash map uses a hash function to map keys to buckets for O(1) average lookup."
-                })
-                ok("Voice: submit_interview_answer", f"score={sia.get('score')}")
-
-                # 11. end_mock_interview
-                emi = await mgr._dispatch(session, "end_mock_interview", {
-                    "interview_id": mi["interview_id"]
-                })
-                ok("Voice: end_mock_interview", f"overall={emi.get('overall_score')}")
-
             # 12. start_focus_review
             fr = await mgr._dispatch(session, "start_focus_review", {
                 "categories": ["python_basics"],
                 "limit": 5
             })
             ok("Voice: start_focus_review", f"{fr.get('total_questions', 0)} focus questions")
-
-            # 13. practice_behavioral
-            pb = await mgr._dispatch(session, "practice_behavioral", {
-                "competency": "teamwork"
-            })
-            ok("Voice: practice_behavioral", f"Q: {str(pb.get('question',''))[:50]}...")
-
-            # 14. evaluate_behavioral_answer
-            if pb.get("question"):
-                eba = await mgr._dispatch(session, "evaluate_behavioral_answer", {
-                    "competency": "teamwork",
-                    "question": pb["question"],
-                    "user_answer": "When I joined the team, there was a conflict about API design. I organized a comparison session where each person presented their approach. We agreed on REST with clear documentation. The team became more collaborative after that."
-                })
-                ok("Voice: evaluate_behavioral_answer", f"overall={eba.get('overall_score')}")
-
-            # 15. capture_behavioral_story
-            cbs = await mgr._dispatch(session, "capture_behavioral_story", {
-                "narrative": "At my previous company, I noticed our onboarding process was taking new engineers 3 weeks to become productive. I created a structured onboarding guide with code walkthroughs, setup scripts, and paired each new hire with a buddy. I also set up weekly check-ins for the first month. As a result, the average onboarding time dropped to 1 week, and new hire satisfaction scores improved by 40 percent.",
-                "competency": "initiative"
-            })
-            ok("Voice: capture_behavioral_story", f"story_id={str(cbs.get('story_id',''))[:8]}...")
 
             # 16. end_session
             es = await mgr._dispatch(session, "end_session", {})
